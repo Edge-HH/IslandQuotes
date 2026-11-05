@@ -6,9 +6,10 @@
 2. 队列若有已批准项，按 FIFO 出队并写 `playback` 日志。
 3. 否则按 `BatchSize` 从启用的每日一言来源抓取候选，每条写 `quote_request` 日志，包含 provider、请求 URL、上游 ID。
 4. 按 `ItemsPerReviewRequest` 分组，经 `AiReviewService.ReviewBatchAsync` 合并请求（同组共用一份系统提示词），组间按 `MaxConcurrentReviews` 并发；每次请求写一条 `ai_request`，每个条目写一条 `ai_review`（同组共享 correlationId）。
-5. `low` 自动批准并加入播放队列；`medium` 进入待人工复核；`high` 自动拦截。
-6. AI 失败按 `ReviewSettings.FailureAction` 进入人工复核或拦截，绝不默认放行。
-7. 人工复核页可逐条或批量批准/拒绝，批准项追加到播放队列末尾，操作写 `manual_review` 日志。
+5. 决策按批次内的 `ReviewPolicy` 快照执行：`low` 自动批准并加入播放队列（严格档下置信度低于 0.7 时提升为 `medium` 转人工复核）；`medium` 默认进入待人工复核（宽松档自动放行）；`high` 自动拦截。
+6. AI 分类会先与禁止主题标签做本地匹配（`QuoteTagCatalog.FindBlockedTag`），命中即强制拦截并写 `blocked_tag`，与提示词中的主题规则互为兜底；随后才套用风险映射。
+7. AI 失败按 `ReviewSettings.FailureAction` 进入人工复核或拦截，绝不默认放行。
+8. 人工复核页可逐条或批量批准/拒绝，批准项追加到播放队列末尾，操作写 `manual_review` 日志。
 
 ## 运行时单例
 

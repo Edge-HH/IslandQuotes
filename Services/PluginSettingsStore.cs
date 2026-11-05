@@ -252,6 +252,20 @@ public sealed class PluginSettingsStore
             changed = true;
         }
 
+        if (!Enum.IsDefined(ai.Strictness))
+        {
+            ai.Strictness = ReviewStrictness.Balanced;
+            changed = true;
+        }
+
+        changed |= NormalizeTagList(ai.BlockedTags);
+        changed |= NormalizeTagList(ai.AllowedTags);
+
+        // 同一标签同时出现在允许与禁止列表时，按失败关闭原则以禁止为准。
+        int conflicted = ai.AllowedTags.RemoveAll(tag =>
+            ai.BlockedTags.Contains(tag, StringComparer.OrdinalIgnoreCase));
+        if (conflicted > 0) changed = true;
+
         int retired = ai.Profiles.RemoveAll(static profile =>
             profile.IsBuiltIn &&
             AiProviderPresetCatalog.RetiredPresetIds.Contains(
@@ -340,9 +354,33 @@ public sealed class PluginSettingsStore
         return changed;
     }
 
-    private static void EnsureUniqueProfileIds(List<AiProviderProfile> profiles, ref bool changed)
+    /// <summary>去空格、去空项、去重并限制长度与数量；返回列表是否被修改。</summary>
+    private static bool NormalizeTagList(List<string>? tags)
     {
-        var usedIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (tags is null || tags.Count == 0) return false;
+
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var normalized = new List<string>();
+        foreach (string tag in tags)
+        {
+            string trimmed = (tag ?? string.Empty).Trim();
+            if (trimmed.Length == 0 || trimmed.Length > 40 || !seen.Add(trimmed)) continue;
+            normalized.Add(trimmed);
+        }
+
+        if (normalized.Count == tags.Count &&
+            normalized.SequenceEqual(tags, StringComparer.Ordinal))
+        {
+            return false;
+        }
+
+        tags.Clear();
+        tags.AddRange(normalized);
+        return true;
+    }
+
+    private static void EnsureUniqueProfileIds(List<AiProviderProfile> profiles, ref bool changed)
+    {        var usedIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (AiProviderProfile profile in profiles)
         {

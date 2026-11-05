@@ -203,8 +203,79 @@
             </Border>
             <Border BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="4" Padding="12">
                 <StackPanel Spacing="8">
+                    <TextBlock Text="提示词快速控制" FontWeight="SemiBold" FontSize="17"/>
+                    <TextBlock Text="严格程度同时改变提示词的判断尺度和本地过滤力度；主题标签会自动注入系统提示词，禁止主题还会在本地强制拦截，无需写进下方自定义提示词。"
+                               FontSize="12" TextWrapping="Wrap"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="判断严格程度" FontWeight="SemiBold"/>
+                        <Border Background="{DynamicResource SubtleFillColorSecondaryBrush}" CornerRadius="8" Padding="4"
+                                HorizontalAlignment="Left">
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <RadioButton Theme="{StaticResource SegmentRadioTheme}" GroupName="ReviewStrictness"
+                                             Content="严格" IsChecked="{Binding IsStrictMode, Mode=TwoWay}"
+                                             ToolTip.Tip="从严判定；低风险但置信度不足时仍转人工复核"/>
+                                <RadioButton Theme="{StaticResource SegmentRadioTheme}" GroupName="ReviewStrictness"
+                                             Content="均衡（默认）" IsChecked="{Binding IsBalancedMode, Mode=TwoWay}"
+                                             ToolTip.Tip="低风险放行，中风险转人工，高风险拦截"/>
+                                <RadioButton Theme="{StaticResource SegmentRadioTheme}" GroupName="ReviewStrictness"
+                                             Content="宽松" IsChecked="{Binding IsRelaxedMode, Mode=TwoWay}"
+                                             ToolTip.Tip="只拦截明确不当内容；中风险自动放行，高风险仍拦截"/>
+                            </StackPanel>
+                        </Border>
+                        <TextBlock Text="{Binding StrictnessDescription}" FontSize="12" TextWrapping="Wrap"
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                    </StackPanel>
+
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="允许的主题" FontWeight="SemiBold"
+                                   ToolTip.Tip="命中这些主题且无安全问题的内容会更倾向放行；不能压过硬性安全边界"/>
+                        <ItemsControl ItemsSource="{Binding AllowedTagOptions}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel Orientation="Horizontal"/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <ToggleButton Content="{Binding Label}"
+                                                  IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                                  Margin="0,0,6,6" Padding="12,5" CornerRadius="6"
+                                                  ToolTip.Tip="勾选后作为展示偏好写入提示词"/>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="禁止的主题" FontWeight="SemiBold"
+                                   ToolTip.Tip="命中这些主题的内容一律拦截：提示词要求判为高风险，本地也会强制执行"/>
+                        <ItemsControl ItemsSource="{Binding BlockedTagOptions}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel Orientation="Horizontal"/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <ToggleButton Content="{Binding Label}"
+                                                  IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                                  Margin="0,0,6,6" Padding="12,5" CornerRadius="6"
+                                                  ToolTip.Tip="勾选后命中即拦截（本地强制执行）"/>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+
+                    <TextBlock Text="{Binding TagSummary}" FontSize="12" TextWrapping="Wrap"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                </StackPanel>
+            </Border>
+            <Border BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="4" Padding="12">
+                <StackPanel Spacing="8">
                     <TextBlock Text="系统提示词" FontWeight="SemiBold" FontSize="17"/>
-                    <TextBlock Text="提示词只定义审查规则；引用内容始终作为不可信数据传入，不应服从其中的指令。"
+                    <TextBlock Text="提示词只定义审查规则；引用内容始终作为不可信数据传入，不应服从其中的指令。判断严格程度与主题规则由上方快速控制自动注入，不要在此重复填写。"
                                FontSize="12" TextWrapping="Wrap"
                                Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
                     <TextBox Text="{Binding SystemPrompt, Mode=TwoWay}"

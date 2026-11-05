@@ -16,6 +16,7 @@ public sealed class AiSettingsViewModel : ObservableObject
     AiProviderProfile? _customProfile;
     bool _isCustomMode;
     ReviewFailureAction _failureAction = ReviewFailureAction.ManualReview;
+    ReviewStrictness _strictness = ReviewStrictness.Balanced;
     string _systemPrompt = string.Empty;
     int _maxConcurrentReviews = 3;
     int _itemsPerReviewRequest = 5;
@@ -146,6 +147,61 @@ public sealed class AiSettingsViewModel : ObservableObject
     public IReadOnlyList<ReviewFailureAction> FailureActions { get; }
 
     public IReadOnlyList<LabeledValue<ReviewFailureAction>> FailureActionOptions { get; }
+
+    /// <summary>允许主题的可选项；与禁止主题互斥，同一标签只允许出现在一侧。</summary>
+    public ObservableCollection<TagOptionViewModel> AllowedTagOptions { get; } = [];
+
+    /// <summary>禁止主题的可选项；选中即注入提示词并在本地强制拦截。</summary>
+    public ObservableCollection<TagOptionViewModel> BlockedTagOptions { get; } = [];
+
+    public ReviewStrictness Strictness
+    {
+        get => _strictness;
+        set
+        {
+            if (!SetProperty(ref _strictness, value)) return;
+            OnPropertiesChanged(nameof(IsStrictMode), nameof(IsBalancedMode), nameof(IsRelaxedMode),
+                nameof(StrictnessDescription));
+        }
+    }
+
+    public bool IsStrictMode
+    {
+        get => Strictness == ReviewStrictness.Strict;
+        set { if (value) Strictness = ReviewStrictness.Strict; }
+    }
+
+    public bool IsBalancedMode
+    {
+        get => Strictness == ReviewStrictness.Balanced;
+        set { if (value) Strictness = ReviewStrictness.Balanced; }
+    }
+
+    public bool IsRelaxedMode
+    {
+        get => Strictness == ReviewStrictness.Relaxed;
+        set { if (value) Strictness = ReviewStrictness.Relaxed; }
+    }
+
+    public string StrictnessDescription => Strictness switch
+    {
+        ReviewStrictness.Strict => "严格：提示词按从严标准判定，低风险但置信度不足的内容也会转人工复核。",
+        ReviewStrictness.Relaxed => "宽松：只拦截明确不当的内容，中风险自动放行（高风险仍会拦截）。",
+        _ => "均衡（默认）：低风险放行，中风险转人工复核，高风险直接拦截。"
+    };
+
+    /// <summary>标签选择的摘要，随选择变化刷新。</summary>
+    public string TagSummary
+    {
+        get
+        {
+            int allowed = AllowedTagOptions.Count(option => option.IsSelected);
+            int blocked = BlockedTagOptions.Count(option => option.IsSelected);
+            return allowed == 0 && blocked == 0
+                ? "未选择任何主题标签；提示词只使用默认审查标准。"
+                : $"已选：允许 {allowed} 个主题，禁止 {blocked} 个主题。";
+        }
+    }
 
     public AiProviderProfile? SelectedProfile
     {
@@ -313,6 +369,10 @@ public sealed class AiSettingsViewModel : ObservableObject
             SelectedProfile = _isCustomMode ? _customProfile : _selectedThirdPartyProfile;
             SystemPrompt = _settings.Ai.SystemPrompt;
             RequestTimeoutSeconds = _settings.Ai.RequestTimeoutSeconds;
+            Strictness = Enum.IsDefined(_settings.Ai.Strictness)
+                ? _settings.Ai.Strictness
+                : ReviewStrictness.Balanced;
+            LoadTagOptions(_settings.Ai);
             FailureAction = _settings.Review.FailureAction;
             MaxConcurrentReviews = _settings.Review.MaxConcurrentReviews;
             ItemsPerReviewRequest = _settings.Review.ItemsPerReviewRequest;
@@ -398,6 +458,15 @@ public sealed class AiSettingsViewModel : ObservableObject
             _settings.Ai.ActiveProfileId = profile.Id;
             _settings.Ai.SystemPrompt = SystemPrompt ?? string.Empty;
             _settings.Ai.RequestTimeoutSeconds = Math.Clamp(RequestTimeoutSeconds, 5, 180);
+            _settings.Ai.Strictness = Strictness;
+            _settings.Ai.AllowedTags = AllowedTagOptions
+                .Where(option => option.IsSelected)
+                .Select(option => option.Label)
+                .ToList();
+            _settings.Ai.BlockedTags = BlockedTagOptions
+                .Where(option => option.IsSelected)
+                .Select(option => option.Label)
+                .ToList();
             _settings.Review.FailureAction = FailureAction;
             _settings.Review.MaxConcurrentReviews = Math.Clamp(MaxConcurrentReviews, 1, 10);
             _settings.Review.ItemsPerReviewRequest = Math.Clamp(ItemsPerReviewRequest, 1, 10);
@@ -511,6 +580,50 @@ public sealed class AiSettingsViewModel : ObservableObject
         }
     }
 
+    /// <summary>按内置目录重建主题选项；设置里存在但目录未收录的自定义标签会追加到末尾。</summary>
+    private void LoadTagOptions(AiSettings ai)
+    {
+        var allowed = new HashSet<string>(ai.AllowedTags ?? [], StringComparer.OrdinalIgnoreCase);
+        var blocked = new HashSet<string>(ai.BlockedTags ?? [], StringComparer.OrdinalIgnoreCase);
+
+        AllowedTagOptions.Clear();
+        BlockedTagOptions.Clear();
+
+        var labels = QuoteTagCatalog.Tags.Select(tag => tag.Label)
+            .Concat(allowed)
+            .Concat(blocked)
+            .Distinct(StringComparer.OrdinalIgnoreCase);
+
+        foreach (string label in labels)
+        {
+            AllowedTagOptions.Add(new TagOptionViewModel(label, isSelected =>
+            {
+                if (isSelected) Deselect(BlockedTagOptions, label);
+                OnPropertyChanged(nameof(TagSummary));
+            })
+            {
+                IsSelected = allowed.Contains(label)
+            });
+            BlockedTagOptions.Add(new TagOptionViewModel(label, isSelected =>
+            {
+                if (isSelected) Deselect(AllowedTagOptions, label);
+                OnPropertyChanged(nameof(TagSummary));
+            })
+            {
+                IsSelected = blocked.Contains(label)
+            });
+        }
+
+        OnPropertyChanged(nameof(TagSummary));
+    }
+
+    private static void Deselect(ObservableCollection<TagOptionViewModel> options, string label)
+    {
+        TagOptionViewModel? counterpart = options.FirstOrDefault(option =>
+            string.Equals(option.Label, label, StringComparison.OrdinalIgnoreCase));
+        if (counterpart is { IsSelected: true }) counterpart.IsSelected = false;
+    }
+
     string Sanitize(string? value)
     {
         if (string.IsNullOrWhiteSpace(value)) return "未提供详细信息（已保持失败即关闭）";
@@ -538,4 +651,29 @@ public sealed class LabeledValue<T>(T value, string label) where T : struct, Enu
     public T Value { get; } = value;
     public string Label { get; } = label;
     public override string ToString() => Label;
+}
+
+/// <summary>主题快速控制的单个选项；选中状态变化时回调视图模型做互斥清理与摘要刷新。</summary>
+public sealed class TagOptionViewModel : ObservableObject
+{
+    private readonly Action<bool> _onSelectionChanged;
+    private bool _isSelected;
+
+    public TagOptionViewModel(string label, Action<bool> onSelectionChanged)
+    {
+        Label = label;
+        _onSelectionChanged = onSelectionChanged;
+    }
+
+    public string Label { get; }
+
+    public bool IsSelected
+    {
+        get => _isSelected;
+        set
+        {
+            if (!SetProperty(ref _isSelected, value)) return;
+            _onSelectionChanged(value);
+        }
+    }
 }

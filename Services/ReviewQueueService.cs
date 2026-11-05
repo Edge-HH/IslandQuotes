@@ -400,10 +400,9 @@ public sealed class ReviewQueueService
             .Select(term => term.Trim())
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
-        ReviewSettings reviewSettings = GetReviewSettings();
-        ReviewFailureAction failureAction = reviewSettings.FailureAction;
-        int maxConcurrent = Math.Clamp(reviewSettings.MaxConcurrentReviews, 1, 10);
-        int itemsPerRequest = Math.Clamp(reviewSettings.ItemsPerReviewRequest, 1, 10);
+        ReviewPolicy policy = BuildReviewPolicy();
+        int maxConcurrent = Math.Clamp(policy.MaxConcurrentReviews, 1, 10);
+        int itemsPerRequest = Math.Clamp(policy.ItemsPerReviewRequest, 1, 10);
         using SemaphoreSlim reviewLimiter = new(maxConcurrent, maxConcurrent);
 
         // 需要 AI 审查的候选按「单次请求审查条数」分组，同组共用一次请求和一份系统提示词；
@@ -418,12 +417,12 @@ public sealed class ReviewQueueService
                 continue;
             }
 
-            reviewTasks.Add(ApplyUnreviewedCandidateAsync(candidate.ItemId, candidate.Quote, sessionId, ignoreTerms, failureAction));
+            reviewTasks.Add(ApplyUnreviewedCandidateAsync(candidate.ItemId, candidate.Quote, sessionId, ignoreTerms, policy));
         }
 
         foreach ((string ItemId, QuoteContent Quote)[] group in aiCandidates.Chunk(itemsPerRequest))
         {
-            reviewTasks.Add(ReviewGroupAsync(group, sessionId, ignoreTerms, failureAction, reviewLimiter, ct));
+            reviewTasks.Add(ReviewGroupAsync(group, sessionId, ignoreTerms, policy, reviewLimiter, ct));
         }
 
         ReviewQueueItem[] reviewedItems = (await Task.WhenAll(reviewTasks).ConfigureAwait(false))
@@ -505,10 +504,10 @@ public sealed class ReviewQueueService
         QuoteContent quote,
         string refreshSessionId,
         IReadOnlyList<string> ignoreTerms,
-        ReviewFailureAction failureAction)
+        ReviewPolicy policy)
     {
         ReviewQueueItem item = CreateReviewingItem(itemId, quote, refreshSessionId);
-        return [await ApplyUnreviewedDecisionAsync(item, quote, ignoreTerms, failureAction).ConfigureAwait(false)];
+        return [await ApplyUnreviewedDecisionAsync(item, quote, ignoreTerms, policy).ConfigureAwait(false)];
     }
 
     /// <summary>用一次 AI 请求审查一组候选，再逐条套用决策规则。</summary>
@@ -516,7 +515,7 @@ public sealed class ReviewQueueService
         (string ItemId, QuoteContent Quote)[] group,
         string refreshSessionId,
         IReadOnlyList<string> ignoreTerms,
-        ReviewFailureAction failureAction,
+        ReviewPolicy policy,
         SemaphoreSlim reviewLimiter,
         CancellationToken ct)
     {
@@ -551,7 +550,7 @@ public sealed class ReviewQueueService
                     group[i].Quote,
                     refreshSessionId,
                     ignoreTerms,
-                    failureAction,
+                    policy,
                     results?[i],
                     reviewError).ConfigureAwait(false);
             }
@@ -569,7 +568,7 @@ public sealed class ReviewQueueService
         QuoteContent quote,
         string refreshSessionId,
         IReadOnlyList<string> ignoreTerms,
-        ReviewFailureAction failureAction,
+        ReviewPolicy policy,
         AiReviewResult? result,
         string reviewError)
     {
@@ -616,6 +615,9 @@ public sealed class ReviewQueueService
         bool aiSucceeded = result.IsSuccess
             && result.Risk is RiskLevel.Low or RiskLevel.Medium or RiskLevel.High;
         string? ignoredTerm = FindIgnoredTerm(quote.Content, ignoreTerms);
+        string? blockedTag = aiSucceeded
+            ? QuoteTagCatalog.FindBlockedTag(result.Categories, policy.BlockedTags)
+            : null;
         string decision;
         if (ignoredTerm is not null)
         {
@@ -626,10 +628,22 @@ public sealed class ReviewQueueService
             item.AiReason = "命中本地忽略词: " + ignoredTerm + "." + existingReason;
             item.State = ReviewItemState.Blocked;
             decision = "local_ignore";
-        }            else if (!aiSucceeded)
+        }
+        else if (blockedTag is not null)
+        {
+            // 禁止主题在本地强制执行：即使 AI 判为低风险也拦截，与提示词中的规则互为兜底。
+            string existingReason = string.IsNullOrWhiteSpace(item.AiReason)
+                ? string.Empty
+                : " AI reason: " + item.AiReason;
+            item.Risk = RiskLevel.High;
+            item.AiReason = "命中禁止主题: " + blockedTag + "." + existingReason;
+            item.State = ReviewItemState.Blocked;
+            decision = "blocked_tag";
+        }
+        else if (!aiSucceeded)
         {
             item.Risk = RiskLevel.Unknown;
-            item.State = failureAction == ReviewFailureAction.Block
+            item.State = policy.FailureAction == ReviewFailureAction.Block
                 ? ReviewItemState.Blocked
                 : ReviewItemState.AwaitingManualReview;
             item.AiReason = string.IsNullOrWhiteSpace(item.AiReason)
@@ -642,12 +656,32 @@ public sealed class ReviewQueueService
             switch (result.Risk)
             {
                 case RiskLevel.Low:
-                    item.State = ReviewItemState.Approved;
-                    decision = "auto_pass";
+                    if (policy.Strictness == ReviewStrictness.Strict && result.Confidence < StrictLowConfidenceFloor)
+                    {
+                        // 严格档：低风险但把握不足时仍转人工，宁可多复核也不冒险放行。
+                        // 风险提升到 medium，保证条目能被人工批准而不是卡死在复核列表。
+                        item.Risk = RiskLevel.Medium;
+                        item.State = ReviewItemState.AwaitingManualReview;
+                        decision = "manual_required_strict";
+                    }
+                    else
+                    {
+                        item.State = ReviewItemState.Approved;
+                        decision = "auto_pass";
+                    }
                     break;
                 case RiskLevel.Medium:
-                    item.State = ReviewItemState.AwaitingManualReview;
-                    decision = "manual_required";
+                    if (policy.Strictness == ReviewStrictness.Relaxed)
+                    {
+                        // 宽松档：中风险自动放行，风险与理由保留在历史/队列中可查。
+                        item.State = ReviewItemState.Approved;
+                        decision = "auto_pass_relaxed";
+                    }
+                    else
+                    {
+                        item.State = ReviewItemState.AwaitingManualReview;
+                        decision = "manual_required";
+                    }
                     break;
                 case RiskLevel.High:
                     item.State = ReviewItemState.Blocked;
@@ -655,7 +689,7 @@ public sealed class ReviewQueueService
                     break;
                 default:
                     item.Risk = RiskLevel.Unknown;
-                    item.State = failureAction == ReviewFailureAction.Block
+                    item.State = policy.FailureAction == ReviewFailureAction.Block
                         ? ReviewItemState.Blocked
                         : ReviewItemState.AwaitingManualReview;
                     decision = "ai_failure";
@@ -668,7 +702,7 @@ public sealed class ReviewQueueService
             result,
             ignoredTerm,
             aiRisk,
-            failureAction,
+            policy,
             reviewError).ConfigureAwait(false);
         return item;
     }
@@ -678,7 +712,7 @@ public sealed class ReviewQueueService
         ReviewQueueItem item,
         QuoteContent quote,
         IReadOnlyList<string> ignoreTerms,
-        ReviewFailureAction failureAction)
+        ReviewPolicy policy)
     {
         string? ignoredTerm = FindIgnoredTerm(quote.Content, ignoreTerms);
         string decision;
@@ -713,7 +747,7 @@ public sealed class ReviewQueueService
             result,
             ignoredTerm,
             RiskLevel.Unknown,
-            failureAction,
+            policy,
             string.Empty).ConfigureAwait(false);
         return item;
     }
@@ -1174,9 +1208,34 @@ public sealed class ReviewQueueService
         return Math.Max(0, review.MaxHistoryItems);
     }
 
-    private ReviewSettings GetReviewSettings()
+    /// <summary>严格档下低风险结论需要的最低置信度；低于该值仍转人工复核。</summary>
+    private const double StrictLowConfidenceFloor = 0.7;
+
+    /// <summary>
+    /// 一次刷新批次内所有决策共用的策略快照：失败策略、严格程度、禁止主题与并发参数，
+    /// 避免同一批条目因设置中途变更而使用不同标准。
+    /// </summary>
+    private sealed record ReviewPolicy(
+        ReviewFailureAction FailureAction,
+        ReviewStrictness Strictness,
+        IReadOnlyList<string> BlockedTags,
+        int MaxConcurrentReviews,
+        int ItemsPerReviewRequest);
+
+    private ReviewPolicy BuildReviewPolicy()
     {
-        return _settings.Settings?.Review ?? new ReviewSettings();
+        ReviewSettings review = _settings.Settings?.Review ?? new ReviewSettings();
+        AiSettings? ai = _settings.Settings?.Ai;
+        ReviewStrictness strictness = ai is not null && Enum.IsDefined(ai.Strictness)
+            ? ai.Strictness
+            : ReviewStrictness.Balanced;
+
+        return new ReviewPolicy(
+            review.FailureAction,
+            strictness,
+            QuoteTagCatalog.Normalize(ai?.BlockedTags),
+            Math.Clamp(review.MaxConcurrentReviews, 1, 10),
+            Math.Clamp(review.ItemsPerReviewRequest, 1, 10));
     }
 
     private void UpdateCountsLocked(string? statusMessage)
@@ -1350,7 +1409,7 @@ public sealed class ReviewQueueService
         AiReviewResult result,
         string? ignoredTerm,
         RiskLevel aiRisk,
-        ReviewFailureAction failureAction,
+        ReviewPolicy policy,
         string reviewError)
     {
         QuoteContent quote = item.Quote ?? new QuoteContent();
@@ -1377,7 +1436,7 @@ public sealed class ReviewQueueService
                 aiModel = item.AiModel,
                 aiRequestId = item.AiRequestId,
                 ignoredTerm = ignoredTerm ?? string.Empty,
-                failureAction = failureAction.ToString(),
+                failureAction = policy.FailureAction.ToString(),
                 upstreamId = quote.UpstreamId
             }
         }).ConfigureAwait(false);
