@@ -35,6 +35,19 @@ public enum AiProtocol
     GeminiGenerateContent = 2
 }
 
+/// <summary>AI 审查的判断严格程度；同时影响提示词限度与审查决策的过滤力度。</summary>
+public enum ReviewStrictness
+{
+    /// <summary>宽松：只拦截明确不适合校园展示的内容，中风险默认放行。</summary>
+    Relaxed = 0,
+
+    /// <summary>均衡（默认）：低风险放行、中风险转人工、高风险拦截。</summary>
+    Balanced = 1,
+
+    /// <summary>严格：按从严标准提示词审查，低风险且置信度不足时也转人工。</summary>
+    Strict = 2
+}
+
 /// <summary>One quote returned by an upstream quote provider.</summary>
 public sealed class QuoteContent
 {
@@ -127,6 +140,15 @@ public sealed class AiSettings
     public List<AiProviderProfile> Profiles { get; set; } = [];
     public string SystemPrompt { get; set; } = string.Empty;
     public int RequestTimeoutSeconds { get; set; } = 45;
+
+    /// <summary>判断严格程度；写入提示词并影响审查决策的过滤力度。</summary>
+    public ReviewStrictness Strictness { get; set; } = ReviewStrictness.Balanced;
+
+    /// <summary>允许的主题标签（快速控制）：提示词中倾向展示，不能压过安全边界。</summary>
+    public List<string> AllowedTags { get; set; } = [];
+
+    /// <summary>禁止的主题标签（快速控制）：命中即拦截，本地强制执行。</summary>
+    public List<string> BlockedTags { get; set; } = [];
 }
 
 public sealed class ReviewSettings

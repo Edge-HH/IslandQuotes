@@ -285,16 +285,17 @@ public sealed class AiReviewService
         string correlationId = Guid.NewGuid().ToString("N");
         AuditOptions auditOptions = ReadAuditOptions();
         PluginSettings settingsSnapshot = _settings.Settings;
-        string customSystemPrompt = settingsSnapshot.Ai?.SystemPrompt ?? string.Empty;
-        int settingsTimeout = settingsSnapshot.Ai?.RequestTimeoutSeconds ?? 45;
+        AiSettings? aiSettings = settingsSnapshot.Ai;
+        AiPromptOptions promptOptions = BuildPromptOptions(aiSettings);
+        int settingsTimeout = aiSettings?.RequestTimeoutSeconds ?? 45;
         int timeoutSeconds = Math.Clamp(
             profile.TimeoutSeconds > 0 ? profile.TimeoutSeconds : settingsTimeout,
             5,
             180);
 
         (string systemPrompt, string userPrompt) = isBatch
-            ? AiReviewPrompt.CreateBatch(targets.Select(static target => target.Quote).ToArray(), customSystemPrompt)
-            : AiReviewPrompt.Create(targets[0].Quote, customSystemPrompt);
+            ? AiReviewPrompt.CreateBatch(targets.Select(static target => target.Quote).ToArray(), promptOptions)
+            : AiReviewPrompt.Create(targets[0].Quote, promptOptions);
         AiReviewResult result = CreateBaseResult(profile, systemPrompt, userPrompt);
         var secrets = new List<string>();
         var extraHeaders = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -970,6 +971,21 @@ public sealed class AiReviewService
             Enabled: settings.Log?.Enabled ?? true,
             FullPrompts: settings.Review?.LogFullPrompts ?? true,
             FullResponses: settings.Review?.LogFullResponses ?? true);
+    }
+
+    /// <summary>从设置构造审查提示词选项；严格度与标签在读取时归一化，异常值按均衡/空处理。</summary>
+    private static AiPromptOptions BuildPromptOptions(AiSettings? aiSettings)
+    {
+        if (aiSettings is null) return AiPromptOptions.Default;
+
+        ReviewStrictness strictness = Enum.IsDefined(aiSettings.Strictness)
+            ? aiSettings.Strictness
+            : ReviewStrictness.Balanced;
+        return new AiPromptOptions(
+            aiSettings.SystemPrompt,
+            strictness,
+            QuoteTagCatalog.Normalize(aiSettings.AllowedTags),
+            QuoteTagCatalog.Normalize(aiSettings.BlockedTags));
     }
 
     private static void CopyParsedResult(AiReviewResult source, AiReviewResult destination)
