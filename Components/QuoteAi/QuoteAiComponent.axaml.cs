@@ -1,19 +1,20 @@
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Threading;
 using ClassIsland.Core.Abstractions.Controls;
 using ClassIsland.Core.Abstractions.Services;
 using ClassIsland.Core.Attributes;
-using Motivation.Core;
-using Motivation.Models;
+using IslandQuotes.Core;
+using IslandQuotes.Models;
+using IslandQuotes.Services;
 
-namespace Motivation.Components.QuoteAi;
+namespace IslandQuotes.Components.QuoteAi;
 
 [ComponentInfo(
     "4E804B23-8A13-4E8F-92A8-6C86032875CF",
-    "AI 每日一言",
+    "GoodQuotes",
     "\uE3F4",
-    "经过 AI 风险审查后再展示，支持批量审查与排队播放")]
+    "可自定义的，可选带审查的每日一言")]
 public partial class QuoteAiComponent : ComponentBase<QuoteAiConfig>
 {
     readonly ILessonsService _lessonsService;
@@ -22,6 +23,7 @@ public partial class QuoteAiComponent : ComponentBase<QuoteAiConfig>
 
     CancellationTokenSource? _lifetimeCts;
     int _isUpdating;
+    int _isRefilling;
     int _displayGeneration;
     bool _isAttached;
 
@@ -98,6 +100,8 @@ public partial class QuoteAiComponent : ComponentBase<QuoteAiConfig>
                 // 由下方统一的运行时不可用提示处理。
             }
 
+            IReadOnlyList<IQuoteProvider> customProviders = Settings.CreateCustomProviders();
+
             string[] ignoreTerms = Settings.IgnoreListString
                 .Split(["\r\n", "\n", "\r"], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
@@ -105,9 +109,8 @@ public partial class QuoteAiComponent : ComponentBase<QuoteAiConfig>
             {
                 ProviderSettings = Settings.ProviderSettings,
                 LengthLimitation = Math.Max(0, Settings.LengthLimitation),
-                BatchSize = Math.Clamp(Settings.BatchSize, 1, 10),
-                MaxBufferedItems = Math.Clamp(Settings.MaxBufferedItems, 1, 100),
-                IgnoreTerms = ignoreTerms.Where(term => !string.IsNullOrWhiteSpace(term)).ToArray()
+                IgnoreTerms = ignoreTerms.Where(term => !string.IsNullOrWhiteSpace(term)).ToArray(),
+                ExtraProviders = customProviders
             };
 
             ReviewQueueItem? item = await PluginRuntime.Queue
@@ -118,6 +121,9 @@ public partial class QuoteAiComponent : ComponentBase<QuoteAiConfig>
             if (!_isAttached) return;
 
             await Dispatcher.UIThread.InvokeAsync(() => DisplayNext(item, cancellationToken));
+
+            if (PluginRuntime.Queue.QueuedCount <= PluginRuntime.SettingsStore.Settings.Review.RefillThreshold)
+                _ = RefillInBackgroundAsync(options, cancellationToken);
         }
         catch (OperationCanceledException)
         {
@@ -135,11 +141,31 @@ public partial class QuoteAiComponent : ComponentBase<QuoteAiConfig>
         }
     }
 
+    /// <summary>队列降到阈值时在后台抓取并审查下一批，使下次刷新可直接从队列出队而无需等待审查。</summary>
+    async Task RefillInBackgroundAsync(QuoteRequestOptions options, CancellationToken cancellationToken)
+    {
+        if (Interlocked.Exchange(ref _isRefilling, 1) == 1) return;
+
+        try
+        {
+            await PluginRuntime.Queue.RefreshBatchAsync(options, cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            // 失败已由队列服务写入审计日志；下次刷新时会再次尝试补充。
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _isRefilling, 0);
+        }
+    }
+
     void DisplayNext(ReviewQueueItem? item, CancellationToken cancellationToken)
     {
         if (!_isAttached) return;
 
-        // 防御性检查：组件永远不展示高风险内容，也不展示尚未完成审查或未经人工批准的中风险内容。
+        // 防御性检查：组件永远不展示高风险内容，也不展示尚未完成审查或未经人工批准的中风险内容；
+        // 仅来源明确关闭 AI 审查的内容可在未知风险下播放。
         bool unsafeState = item is not null
             && item.State is not (ReviewItemState.Approved or ReviewItemState.Displayed);
         bool mediumWithoutManualApproval = item is not null
@@ -147,7 +173,8 @@ public partial class QuoteAiComponent : ComponentBase<QuoteAiConfig>
             && item.ManualReviewedAt is null;
         bool unknownWithoutManualApproval = item is not null
             && item.Risk == RiskLevel.Unknown
-            && item.ManualReviewedAt is null;
+            && item.ManualReviewedAt is null
+            && !item.IsAiReviewSkipped;
 
         if (item is null
             || item.Risk == RiskLevel.High
@@ -231,27 +258,24 @@ public partial class QuoteAiComponent : ComponentBase<QuoteAiConfig>
 
     string BuildEmptyMessage()
     {
-        int pending = 0;
-        int blocked = 0;
-        string status = string.Empty;
+        int pending;
+        int blocked;
+        string status;
 
         try
         {
             pending = PluginRuntime.Queue.PendingCount;
             blocked = PluginRuntime.Queue.BlockedCount;
-            if (Settings.ShowQueueStatus)
-                status = SanitizeStatus(PluginRuntime.Queue.LastStatusMessage);
+            status = SanitizeStatus(PluginRuntime.Queue.LastStatusMessage);
         }
         catch
         {
-            return "暂无通过 AI 审查的内容；AI 审查运行时尚未就绪。";
+            return "暂无可播放的内容；审查运行时尚未就绪。";
         }
 
-        string message = $"暂无通过 AI 审查的内容（待人工复核 {pending} / 已拦截 {blocked}）";
-        if (Settings.ShowQueueStatus && !string.IsNullOrWhiteSpace(status))
+        string message = $"暂无可播放的内容（待人工复核 {pending} / 已拦截 {blocked}）";
+        if (!string.IsNullOrWhiteSpace(status))
             message += $"\n{status}";
-        else if (!Settings.ShowQueueStatus)
-            message += "\nAI 审查失败时默认拦截。";
         return message;
     }
 

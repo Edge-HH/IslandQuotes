@@ -1,7 +1,7 @@
 ﻿using System.Text.Json.Serialization;
-using Motivation.Core;
+using IslandQuotes.Core;
 
-namespace Motivation.Models;
+namespace IslandQuotes.Models;
 
 /// <summary>A quote candidate moving through AI review, manual review and playback.</summary>
 public sealed class ReviewQueueItem : ObservableObject
@@ -183,6 +183,9 @@ public sealed class ReviewQueueItem : ObservableObject
         get => _manualReviewedAt;
         set => SetProperty(ref _manualReviewedAt, value);
     }
+
+    /// <summary>来源未启用 AI 审查、仅经本地排除列表检查后直接放行。</summary>
+    public bool IsAiReviewSkipped { get; set; }
 
     public DateTimeOffset? DisplayedAt
     {

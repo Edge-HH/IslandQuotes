@@ -1,4 +1,4 @@
-﻿<ci:SettingsPageBase x:Class="Motivation.SettingsPages.AiSettingsPage"
+﻿<ci:SettingsPageBase x:Class="IslandQuotes.SettingsPages.AiSettingsPage"
                      xmlns="https://github.com/avaloniaui"
                      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                      xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
@@ -6,104 +6,156 @@
                      xmlns:ci="http://classisland.tech/schemas/xaml/core"
                      mc:Ignorable="d" d:DesignHeight="760" d:DesignWidth="720"
                      AttachedToVisualTree="OnAttachedToVisualTree">
+    <ci:SettingsPageBase.Resources>
+        <ControlTheme x:Key="SegmentRadioTheme" TargetType="RadioButton">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="6"/>
+            <Setter Property="Padding" Value="22,7"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}"/>
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <Border Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="{TemplateBinding CornerRadius}"
+                            Padding="{TemplateBinding Padding}">
+                        <ContentPresenter Content="{TemplateBinding Content}"
+                                          Foreground="{TemplateBinding Foreground}"
+                                          HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                </ControlTemplate>
+            </Setter>
+            <Style Selector="^:pointerover">
+                <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}"/>
+            </Style>
+            <Style Selector="^:checked">
+                <Setter Property="Background" Value="{DynamicResource ControlFillColorDefaultBrush}"/>
+                <Setter Property="BorderBrush" Value="{DynamicResource CardStrokeColorDefaultBrush}"/>
+                <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}"/>
+                <Setter Property="FontWeight" Value="SemiBold"/>
+            </Style>
+        </ControlTheme>
+    </ci:SettingsPageBase.Resources>
     <ScrollViewer>
         <StackPanel Classes="settings-container animated-intro" Spacing="10">
-            <StackPanel Orientation="Horizontal" Spacing="10">
-                <TextBlock Text="AI 审查与供应商" FontSize="26" FontWeight="Bold" VerticalAlignment="Center"/>
-                <Border Background="#22007A5A" CornerRadius="10" Padding="8,3" VerticalAlignment="Center">
-                    <TextBlock Text="默认失败即关闭" FontWeight="SemiBold"/>
-                </Border>
-            </StackPanel>
-            <TextBlock Text="所有第三方内容在展示前都会经过 AI 风险审查；AI 超时、限流或解析失败不会自动放行。低风险自动排队，中风险进入人工复核，高风险拦截。"
+            <TextBlock Text="AI审查设置" FontSize="26" FontWeight="Bold"/>
+            <TextBlock Text="审计失败的内容不会自动放行"
                        TextWrapping="Wrap" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
             <Border Background="#204169e1" CornerRadius="4" Padding="10">
                 <StackPanel Spacing="4">
-                    <TextBlock Text="公用免费供应商说明" FontWeight="SemiBold"/>
-                    <TextBlock Text="内置预设包含公用免费、免费额度、付费、本地和自定义类别。公用免费端点可能记录、复用或限流所发送的文本，请勿发送敏感信息；在意隐私时请选择本地或自备密钥的供应商。API Key 只保存在本机插件设置文件中，也可填写 env:环境变量名。"
+                    <TextBlock Text="供应商与隐私说明" FontWeight="SemiBold"/>
+                    <TextBlock Text="待审文本会发送给所选供应商，请先阅读其隐私政策；选择本地 Ollama 时内容不会离开本机。API 密钥只保存在本机插件设置文件中。"
                                TextWrapping="Wrap" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
                 </StackPanel>
             </Border>
-            <Border BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="4" Padding="12">
-                <StackPanel Spacing="8">
-                    <TextBlock Text="当前启用的 AI 供应商预设" FontWeight="SemiBold" FontSize="17"/>
-                    <ComboBox ItemsSource="{Binding Profiles}"
-                              SelectedItem="{Binding SelectedProfile, Mode=TwoWay}"
-                              HorizontalAlignment="Stretch">
-                        <ComboBox.ItemTemplate>
-                            <DataTemplate>
-                                <StackPanel Spacing="1">
-                                    <TextBlock Text="{Binding DisplayLabel}" FontWeight="SemiBold" TextWrapping="Wrap"/>
-                                    <TextBlock Text="{Binding Notes}" FontSize="12"
-                                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"/>
-                                </StackPanel>
-                            </DataTemplate>
-                        </ComboBox.ItemTemplate>
-                    </ComboBox>
-                    <TextBlock Text="{Binding SelectedProfileSummary}" FontWeight="SemiBold"/>
-                    <TextBlock Text="{Binding SelectedProfile.Notes}" TextWrapping="Wrap"
-                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
-                    <TextBlock Text="选择某个预设并保存后，它会成为当前启用配置；预设的 Base URL、协议、模型和密钥都可以直接编辑。"
-                               FontSize="12" TextWrapping="Wrap"
-                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
-                    <Border IsVisible="{Binding HasCategoryPrivacyWarning}"
-                            Background="#22F2A900" CornerRadius="4" Padding="8">
-                        <TextBlock Text="{Binding CategoryPrivacyWarning}" TextWrapping="Wrap"/>
+            <Border BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="16">
+                <StackPanel Spacing="10">
+                    <Border Background="{DynamicResource SubtleFillColorSecondaryBrush}" CornerRadius="8" Padding="4"
+                            HorizontalAlignment="Left">
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <RadioButton Theme="{StaticResource SegmentRadioTheme}" GroupName="AiProviderMode"
+                                         Content="第三方模型提供商" IsChecked="{Binding IsThirdPartyMode, Mode=TwoWay}"/>
+                            <RadioButton Theme="{StaticResource SegmentRadioTheme}" GroupName="AiProviderMode"
+                                         Content="自定义模型 API" IsChecked="{Binding IsCustomMode, Mode=TwoWay}"/>
+                        </StackPanel>
                     </Border>
-                </StackPanel>
-            </Border>
+                    <TextBlock Text="{Binding ModeDescription}" TextWrapping="Wrap"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
 
-            <Border BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="4" Padding="12">
-                <StackPanel Spacing="8">
-                    <TextBlock Text="供应商连接参数" FontWeight="SemiBold" FontSize="17"/>
-                    <Grid ColumnDefinitions="*,*" ColumnSpacing="12" RowDefinitions="Auto,Auto,Auto">
-                        <StackPanel Grid.Row="0" Grid.Column="0" Spacing="3">
-                            <TextBlock Text="Base URL" FontWeight="SemiBold"/>
-                            <TextBox Text="{Binding SelectedProfile.BaseUrl, Mode=TwoWay}"
-                                     PlaceholderText="https://api.example.com/v1" TextWrapping="Wrap"/>
-                        </StackPanel>
-                        <StackPanel Grid.Row="0" Grid.Column="1" Spacing="3">
-                            <TextBlock Text="协议" FontWeight="SemiBold"/>
-                            <ComboBox ItemsSource="{Binding Protocols}"
-                                      SelectedItem="{Binding SelectedProtocolChoice, Mode=TwoWay}"
-                                      HorizontalAlignment="Stretch">
-                                <ComboBox.ItemTemplate>
-                                    <DataTemplate><TextBlock Text="{Binding Label}"/></DataTemplate>
-                                </ComboBox.ItemTemplate>
-                            </ComboBox>
-                        </StackPanel>
-                        <StackPanel Grid.Row="1" Grid.Column="0" Spacing="3" Margin="0,8,0,0">
-                            <TextBlock Text="模型" FontWeight="SemiBold"/>
-                            <TextBox Text="{Binding SelectedProfile.Model, Mode=TwoWay}"
-                                     PlaceholderText="模型名称或部署名"/>
-                        </StackPanel>
-                        <StackPanel Grid.Row="1" Grid.Column="1" Spacing="3" Margin="0,8,0,0">
-                            <TextBlock Text="请求超时（秒）" FontWeight="SemiBold"/>
-                            <NumericUpDown Value="{Binding SelectedProfile.TimeoutSeconds, Mode=TwoWay}"
-                                           Minimum="5" Maximum="180" FormatString="0"
-                                           InputMethod.IsInputMethodEnabled="False"/>
-                        </StackPanel>
-                        <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2" Spacing="3" Margin="0,8,0,0">
-                            <TextBlock Text="API Key（密码掩码）" FontWeight="SemiBold"/>
-                            <TextBox Text="{Binding SelectedProfile.ApiKey, Mode=TwoWay}"
-                                     PasswordChar="*" PlaceholderText="留空或填写 env:环境变量名"/>
-                            <TextBlock Text="{Binding ApiKeyRequirementText}" FontSize="12" TextWrapping="Wrap"
-                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
-                        </StackPanel>
-                    </Grid>
-                    <StackPanel Spacing="3">
-                        <TextBlock Text="额外请求头（JSON）" FontWeight="SemiBold"/>
-                        <TextBox Text="{Binding SelectedProfile.ExtraHeadersJson, Mode=TwoWay}"
-                                 AcceptsReturn="True" TextWrapping="Wrap" MinHeight="64"
-                                 PlaceholderText="例如 X-Custom-Header: value"/>
+                    <StackPanel Spacing="4" Margin="0,4,0,0" IsVisible="{Binding IsThirdPartyMode}">
+                        <TextBlock Text="提供商" FontWeight="SemiBold"/>
+                        <ComboBox ItemsSource="{Binding ThirdPartyProfiles}"
+                                  SelectedItem="{Binding SelectedThirdPartyProfile, Mode=TwoWay}"
+                                  MinWidth="280">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate><TextBlock Text="{Binding DisplayLabel}"/></DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
                     </StackPanel>
-                    <ToggleSwitch IsChecked="{Binding SelectedProfile.IsEnabled, Mode=TwoWay}"
-                                  OnContent="启用此预设" OffContent="停用此预设"/>
+
+                    <StackPanel Spacing="4" Margin="0,4,0,0" IsVisible="{Binding IsCustomMode}">
+                        <TextBlock Text="API 地址" FontWeight="SemiBold"/>
+                        <TextBox Text="{Binding SelectedProfile.BaseUrl, Mode=TwoWay}"
+                                 Watermark="{Binding BaseUrlWatermark}"/>
+                    </StackPanel>
+                    <StackPanel Spacing="4" IsVisible="{Binding IsCustomMode}">
+                        <TextBlock Text="协议" FontWeight="SemiBold"/>
+                        <ComboBox ItemsSource="{Binding Protocols}"
+                                  SelectedItem="{Binding SelectedProtocolChoice, Mode=TwoWay}"
+                                  MinWidth="280">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate><TextBlock Text="{Binding Label}"/></DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                    </StackPanel>
+
+                    <StackPanel Spacing="4">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock Text="API 密钥" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                            <Border Width="20" Height="20" CornerRadius="10" BorderThickness="1"
+                                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                                    Background="Transparent"
+                                    ToolTip.Tip="可直接填写密钥，或填写 env:环境变量名 从环境变量读取。密钥只保存在本机插件设置文件中，日志中会被脱敏。">
+                                <TextBlock Text="?" FontSize="12" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                            </Border>
+                        </StackPanel>
+                        <TextBox Text="{Binding SelectedApiKey, Mode=TwoWay}"
+                                 PasswordChar="*" Watermark="填写 API 密钥，或 env:环境变量名"/>
+                        <TextBlock Text="未填写 API 密钥。请填写密钥，或使用 env:环境变量名 引用环境变量。"
+                                   TextWrapping="Wrap" IsVisible="{Binding ShowApiKeyWarning}"
+                                   Foreground="{DynamicResource SystemFillColorCautionBrush}"/>
+                    </StackPanel>
+
+                    <Separator Margin="0,4"/>
+
+                    <Expander Header="自定义设置" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                        <StackPanel Spacing="10">
+                            <StackPanel Spacing="4" IsVisible="{Binding IsThirdPartyMode}">
+                                <TextBlock Text="API 地址" FontWeight="SemiBold"/>
+                                <TextBox Text="{Binding SelectedProfile.BaseUrl, Mode=TwoWay}"
+                                         Watermark="{Binding BaseUrlWatermark}"/>
+                            </StackPanel>
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="请求超时（秒）" FontWeight="SemiBold"/>
+                                <NumericUpDown Value="{Binding SelectedProfile.TimeoutSeconds, Mode=TwoWay}"
+                                               Minimum="5" Maximum="180" FormatString="0"
+                                               InputMethod.IsInputMethodEnabled="False"
+                                               HorizontalAlignment="Left" MinWidth="140"/>
+                            </StackPanel>
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="额外请求头（JSON）" FontWeight="SemiBold"/>
+                                <TextBox Text="{Binding SelectedProfile.ExtraHeadersJson, Mode=TwoWay}"
+                                         AcceptsReturn="True" TextWrapping="Wrap" MinHeight="64"
+                                         Watermark="{}{&quot;X-Custom-Header&quot;: &quot;value&quot;}"/>
+                            </StackPanel>
+                            <ToggleSwitch IsChecked="{Binding SelectedProfile.IsEnabled, Mode=TwoWay}"
+                                          OnContent="启用此预设" OffContent="停用此预设"/>
+                        </StackPanel>
+                    </Expander>
+
+                    <Separator Margin="0,4"/>
+
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock Text="模型" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                        <Button Grid.Column="1" Content="获取可用模型" Click="FetchModelsButton_OnClick"
+                                IsEnabled="{Binding IsIdle}"/>
+                    </Grid>
+                    <TextBox Text="{Binding SelectedModel, Mode=TwoWay}" Watermark="模型名称或部署名"/>
+                    <ComboBox ItemsSource="{Binding AvailableModels}"
+                              SelectedItem="{Binding SelectedAvailableModel, Mode=TwoWay}"
+                              IsVisible="{Binding HasAvailableModels}"
+                              PlaceholderText="从已获取的模型中选择"
+                              HorizontalAlignment="Stretch"/>
                 </StackPanel>
             </Border>
             <Border BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="4" Padding="12">
                 <StackPanel Spacing="8">
-                    <TextBlock Text="审查失败策略与并发" FontWeight="SemiBold" FontSize="17"/>
-                    <Grid ColumnDefinitions="*,*,*" ColumnSpacing="12" RowDefinitions="Auto,Auto">
+                    <TextBlock Text="审查策略与并发" FontWeight="SemiBold" FontSize="17"/>
+                    <Grid ColumnDefinitions="*,*,*" ColumnSpacing="12" RowSpacing="8" RowDefinitions="Auto,Auto">
                         <StackPanel Grid.Row="0" Grid.Column="0" Spacing="3">
                             <TextBlock Text="AI 审查失败时" FontWeight="SemiBold"/>
                             <ComboBox ItemsSource="{Binding FailureActionOptions}"
@@ -115,23 +167,36 @@
                             </ComboBox>
                         </StackPanel>
                         <StackPanel Grid.Row="0" Grid.Column="1" Spacing="3">
-                            <TextBlock Text="最大并发审查数" FontWeight="SemiBold"/>
+                            <TextBlock Text="最大并发请求数" FontWeight="SemiBold"/>
                             <NumericUpDown Value="{Binding MaxConcurrentReviews, Mode=TwoWay}"
                                            Minimum="1" Maximum="10" FormatString="0"
                                            InputMethod.IsInputMethodEnabled="False"/>
                         </StackPanel>
                         <StackPanel Grid.Row="0" Grid.Column="2" Spacing="3">
+                            <TextBlock Text="单次请求审查条数" FontWeight="SemiBold"
+                                       ToolTip.Tip="多条内容合并为一次请求，共用一份系统提示词；设为 1 则逐条请求"/>
+                            <NumericUpDown Value="{Binding ItemsPerReviewRequest, Mode=TwoWay}"
+                                           Minimum="1" Maximum="10" FormatString="0"
+                                           InputMethod.IsInputMethodEnabled="False"/>
+                        </StackPanel>
+                        <StackPanel Grid.Row="1" Grid.Column="0" Spacing="3">
+                            <TextBlock Text="提前审查阈值" FontWeight="SemiBold"
+                                       ToolTip.Tip="已审查待播放的内容不多于该数量时，在后台提前获取并审查下一批；设为 0 则等队列播完再获取"/>
+                            <NumericUpDown Value="{Binding RefillThreshold, Mode=TwoWay}"
+                                           Minimum="0" Maximum="100" FormatString="0"
+                                           InputMethod.IsInputMethodEnabled="False"/>
+                        </StackPanel>
+                        <StackPanel Grid.Row="1" Grid.Column="1" Spacing="3">
+                            <TextBlock Text="全局请求超时（秒）" FontWeight="SemiBold"/>
+                            <NumericUpDown Value="{Binding RequestTimeoutSeconds, Mode=TwoWay}"
+                                           Minimum="5" Maximum="180" FormatString="0"
+                                           InputMethod.IsInputMethodEnabled="False"/>
+                        </StackPanel>
+                        <StackPanel Grid.Row="1" Grid.Column="2" Spacing="3">
                             <TextBlock Text="历史记录上限" FontWeight="SemiBold"/>
                             <NumericUpDown Value="{Binding MaxHistoryItems, Mode=TwoWay}"
                                            Minimum="10" Maximum="100000" FormatString="0"
                                            InputMethod.IsInputMethodEnabled="False"/>
-                        </StackPanel>
-                        <StackPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3" Spacing="3" Margin="0,8,0,0">
-                            <TextBlock Text="全局请求超时（秒）" FontWeight="SemiBold"/>
-                            <NumericUpDown Value="{Binding RequestTimeoutSeconds, Mode=TwoWay}"
-                                           Minimum="5" Maximum="180" FormatString="0"
-                                           InputMethod.IsInputMethodEnabled="False"
-                                           HorizontalAlignment="Left" MinWidth="140"/>
                         </StackPanel>
                     </Grid>
                 </StackPanel>
@@ -172,7 +237,15 @@
                 </StackPanel>
             </Border>
 
-            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10" Margin="0,4,0,0">
+            <StackPanel Spacing="4" Margin="0,4,0,0">
+                <TextBlock Text="测试文本" FontWeight="SemiBold"/>
+                <TextBox Text="{Binding TestText, Mode=TwoWay}" AcceptsReturn="True" TextWrapping="Wrap"
+                         MinHeight="56" Watermark="留空则使用内置的良性测试文本"/>
+                <TextBlock Text="点击「测试连接」会保存设置，并用当前供应商审查这段文本，显示其风险评级。"
+                           FontSize="12" TextWrapping="Wrap"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+            </StackPanel>
+            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10">
                 <TextBlock Text="{Binding StatusMessage}" TextWrapping="Wrap" VerticalAlignment="Center"
                            Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
                 <Button Grid.Column="1" Content="保存设置" Click="SaveButton_OnClick"

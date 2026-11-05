@@ -2,7 +2,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace Motivation.Core;
+namespace IslandQuotes.Core;
 
 /// <summary>插件统一使用的 System.Text.Json 配置。</summary>
 public static class JsonDefaults

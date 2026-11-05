@@ -1,10 +1,10 @@
 ﻿using System.IO;
 using System.Text;
 using System.Text.Json;
-using Motivation.Core;
-using Motivation.Models;
+using IslandQuotes.Core;
+using IslandQuotes.Models;
 
-namespace Motivation.Services;
+namespace IslandQuotes.Services;
 
 /// <summary>线程安全地加载、补全并原子保存插件设置。</summary>
 public sealed class PluginSettingsStore
@@ -252,6 +252,13 @@ public sealed class PluginSettingsStore
             changed = true;
         }
 
+        int retired = ai.Profiles.RemoveAll(static profile =>
+            profile.IsBuiltIn &&
+            AiProviderPresetCatalog.RetiredPresetIds.Contains(
+                string.IsNullOrWhiteSpace(profile.PresetId) ? profile.Id : profile.PresetId,
+                StringComparer.OrdinalIgnoreCase));
+        if (retired > 0) changed = true;
+
         foreach (AiProviderProfile preset in AiProviderPresetCatalog.CreateDefaultProfiles())
         {
             bool exists = ai.Profiles.Any(profile =>
@@ -275,7 +282,10 @@ public sealed class PluginSettingsStore
 
         if (active is null)
         {
-            AiProviderProfile? fallback = ai.Profiles.FirstOrDefault(static profile => profile.IsEnabled)
+            AiProviderProfile? fallback = ai.Profiles.FirstOrDefault(static profile =>
+                                              profile.IsEnabled &&
+                                              string.Equals(profile.Id, AiProviderPresetCatalog.DefaultProfileId, StringComparison.OrdinalIgnoreCase))
+                                          ?? ai.Profiles.FirstOrDefault(static profile => profile.IsEnabled)
                                           ?? ai.Profiles.FirstOrDefault();
             string fallbackId = fallback?.Id ?? string.Empty;
             if (!string.Equals(ai.ActiveProfileId, fallbackId, StringComparison.Ordinal))
@@ -295,6 +305,20 @@ public sealed class PluginSettingsStore
         if (concurrency != review.MaxConcurrentReviews)
         {
             review.MaxConcurrentReviews = concurrency;
+            changed = true;
+        }
+
+        int itemsPerRequest = Math.Clamp(review.ItemsPerReviewRequest, 1, 10);
+        if (itemsPerRequest != review.ItemsPerReviewRequest)
+        {
+            review.ItemsPerReviewRequest = itemsPerRequest;
+            changed = true;
+        }
+
+        int refillThreshold = Math.Clamp(review.RefillThreshold, 0, 100);
+        if (refillThreshold != review.RefillThreshold)
+        {
+            review.RefillThreshold = refillThreshold;
             changed = true;
         }
 

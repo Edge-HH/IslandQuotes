@@ -2,13 +2,13 @@
 using Avalonia.Interactivity;
 using ClassIsland.Core.Abstractions.Controls;
 using ClassIsland.Core.Attributes;
-using Motivation.ViewModels;
+using IslandQuotes.ViewModels;
 
-namespace Motivation.SettingsPages;
+namespace IslandQuotes.SettingsPages;
 
 [HidePageTitle]
-[Group("motivation")]
-[SettingsPageInfo("motivation.ai-review", "AI 审查与供应商", "\uE9D9", "\uE9D9")]
+[Group("islandquotes")]
+[SettingsPageInfo("islandquotes.ai-review", "AI审查设置", "\uE21D", "\uE21D")]
 public partial class AiSettingsPage : SettingsPageBase
 {
     readonly AiSettingsViewModel _viewModel;
@@ -33,6 +33,11 @@ public partial class AiSettingsPage : SettingsPageBase
     async void TestButton_OnClick(object? sender, RoutedEventArgs e)
     {
         await _viewModel.TestAsync();
+    }
+
+    async void FetchModelsButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        await _viewModel.FetchModelsAsync();
     }
 
     void OpenLogDirectoryButton_OnClick(object? sender, RoutedEventArgs e)

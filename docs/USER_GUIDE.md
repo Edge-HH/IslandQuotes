@@ -1,15 +1,15 @@
-# Motivation · AI 每日一言 用户指南
+# IslandQuotes 用户指南
 
-本文面向班级大屏管理员、ClassIsland 使用者和需要审核展示内容的教师。插件会在第三方名句显示之前调用 AI 风险审查，并提供人工复核、FIFO 播放队列和审计日志。
+本文面向班级大屏管理员、ClassIsland 使用者和需要审核展示内容的教师。插件可在第三方名句显示之前调用 AI 风险审查（组件设置中可按来源开关），并提供人工复核、FIFO 播放队列和审计日志。
 
 插件清单信息：
 
-- 名称：Motivation · AI 每日一言
-- ID：`ink.motivation.quoteai`
-- 入口程序集：`Motivation.dll`
-- 目标环境：ClassIsland v2、Windows、.NET 10
-- 组件名称：AI 每日一言
-- 设置页：AI 审查与供应商、人工复核与播放队列
+- 名称：IslandQuotes
+- ID：`ink.islandquotes.quoteai`
+- 入口程序集：`IslandQuotes.dll`
+- 目标环境：ClassIsland 2.1.0.1 及以上、Windows、.NET 8
+- 组件名称：GoodQuotes
+- 设置页：AI审查设置、人工复核与播放队列
 
 > 来源：从 ExtraIsland 的「名句一言」组件提取并重构。实际源码路径为 `C:\Users\user\Documents\Code\ExtraIsland\ExtraIsland\Components\Rhesis\`；需求记录中的旧路径 `C:\Users\user\Documents\Codes\extraisland` 与实际目录不一致。详见仓库根目录 README。
 
@@ -40,10 +40,10 @@ AI 审查：Low / Medium / High
 
 ### 2.1 从 CIPX 安装
 
-1. 从发布页或构建产物取得 `Motivation.cipx`。
+1. 从发布页或构建产物取得 `IslandQuotes.cipx`。
 2. 打开 ClassIsland v2 的插件管理界面。
 3. 选择导入/安装本地插件，指向该 `.cipx` 文件。
-4. 启用 `Motivation · AI 每日一言`。
+4. 启用 `IslandQuotes`。
 5. 若 ClassIsland 提示重启，按提示重启。
 
 ### 2.2 从源码构建
@@ -51,14 +51,14 @@ AI 审查：Low / Medium / High
 要求 Windows、.NET SDK 10+：
 
 ```powershell
-dotnet build Motivation.csproj -c Release -p:CreateCipx=true
+dotnet build IslandQuotes.csproj -c Release -p:CreateCipx=true
 ```
 
 工作区有本地 SDK 时：
 
 ```powershell
-.\.tools\dotnet\dotnet.exe restore Motivation.csproj
-.\.tools\dotnet\dotnet.exe build Motivation.csproj -c Release -p:CreateCipx=true
+.\.tools\dotnet\dotnet.exe restore IslandQuotes.csproj
+.\.tools\dotnet\dotnet.exe build IslandQuotes.csproj -c Release -p:CreateCipx=true
 ```
 
 或运行：
@@ -70,54 +70,54 @@ dotnet build Motivation.csproj -c Release -p:CreateCipx=true
 如果 CIPX 校验和阶段报错 `'pwsh' 不是内部或外部命令`，说明系统缺少 PowerShell 7。可改用：
 
 ```powershell
-dotnet build Motivation.csproj -c Release -p:CreateCipx=true -p:PowershellBinaryName=powershell.exe
+dotnet build IslandQuotes.csproj -c Release -p:CreateCipx=true -p:PowershellBinaryName=powershell.exe
 ```
 
 构建脚本会自动优先使用本机 `pwsh`，缺失时回退到 Windows PowerShell。
 
 主要产物：
 
-- `bin\Release\net10.0-windows\Motivation.dll`
-- `bin\Release\net10.0-windows\manifest.yml`
-- `bin\Release\net10.0-windows\icon.png`
-- `cipx\Motivation.cipx`
+- `bin\Release\net8.0-windows\IslandQuotes.dll`
+- `bin\Release\net8.0-windows\manifest.yml`
+- `bin\Release\net8.0-windows\icon.png`
+- `cipx\IslandQuotes.cipx`
 
 升级前建议备份插件配置目录中的 `settings.json`、`review-queue.json` 和 `log\`。不要在未备份时手动编辑队列文件。
 
 ## 3. 首次使用
 
-1. 添加组件：在 ClassIsland 的组件配置中添加 **AI 每日一言**，放到主界面期望的位置。
-2. 打开插件设置组 **Motivation**。
-3. 进入 **AI 审查与供应商**。
-4. 初次体验保留默认的 **Pollinations 公共免费** 预设。它使用 `https://text.pollinations.ai/openai`、模型 `openai`，不需要 API Key。
+1. 添加组件：在 ClassIsland 的组件配置中添加 **GoodQuotes**，放到主界面期望的位置。
+2. 打开插件设置组 **IslandQuotes**。
+3. 进入 **AI审查设置**。
+4. 默认预设为 **OpenAI 兼容**：填写你所用服务的 Base URL、模型与 API Key，或改选内置的官方供应商预设，然后保存。
 5. 点击 **测试连接**，确认网络与端点可用。
-6. 进入组件的独立设置，确认名句来源已启用且权重大于 0，设置刷新间隔（默认约 30 秒）和每批数量。
+6. 进入组件的独立设置，确认名句来源已启用且权重大于 0，按需开关各来源的 AI 审查，并设置刷新间隔（默认约 30 秒）。
 7. 等待首次抓取/审查；若出现中风险，到 **人工复核与播放队列** 中处理。
 
-> Pollinations 是匿名第三方公共端点，可能限流、记录文本或停止服务。正式校园使用前请阅读隐私文档并按机构要求选择可信供应商或本地 Ollama。
+> 待审文本会发送给所选 AI 供应商。正式校园使用前请阅读隐私文档并按机构要求选择可信供应商或本地 Ollama。不需要 AI 审查时，可在组件设置中展开对应来源，关闭「对该来源启用 AI 审查」。
 
 ### 3.1 推荐的首次参数
 
 | 参数 | 建议值 | 说明 |
 | --- | --- | --- |
 | 刷新间隔 | 30 秒 | 组件会优先播放已有队列；刷新不是强制换句。 |
-| 每批抓取数 | 3 | 较小批次便于观察审查质量；范围 1–10。 |
-| 最大缓冲 | 12 | 待复核 + 播放队列上限；范围 1–100。 |
-| 最大并发审查 | 3 | 对供应商限速更友好；范围 1–10。 |
+| 最大并发请求数 | 3 | 对供应商限速更友好；范围 1–10。 |
+| 单次请求审查条数 | 5 | 多条合并为一次请求，共用一份系统提示词；设为 1 则逐条请求。 |
+| 提前审查阈值 | 1 | 待播放条数不多于该值时在后台审查下一批；设为 0 则播完再获取。 |
 | 审查失败策略 | 转人工复核（推荐） | 失败时不会自动播放；要求严格时可改为直接拦截。 |
 | 日志 | 启用 | 默认保留 30 天，便于追查决策。 |
 ## 4. 配置 AI 审查供应商
 
 ### 4.1 界面字段
 
-进入 **Motivation → AI 审查与供应商** 后，可编辑当前选中的供应商预设：
+进入 **IslandQuotes → AI审查设置** 后，可编辑当前选中的供应商预设：
 
-- **供应商预设**：按类别显示内置预设；保存时所选预设会成为当前活动配置。
+- **供应商预设**：显示内置预设；保存时所选预设会成为当前活动配置。
 - **Base URL**：服务根地址或完整的 Chat Completions 地址。
 - **协议**：OpenAI Chat Completions、Anthropic Messages 或 Gemini generateContent。
 - **模型**：供应商控制台中的模型名称。
 - **请求超时**：单个请求的超时时间，插件程序会限制在合理范围内。
-- **API Key**：密码掩码输入框。可填明文密钥，或 `env:变量名`。
+- **API Key**：可填明文密钥，或 `env:变量名`。
 - **额外请求头（JSON）**：仅用于需要特殊请求头的自建网关/服务。
 - **启用此预设**：停用后不作为活动配置，但仍保留编辑内容。
 - **保存设置 / 测试连接**：保存当前编辑并做实际请求诊断。
@@ -126,24 +126,23 @@ dotnet build Motivation.csproj -c Release -p:CreateCipx=true -p:PowershellBinary
 
 ### 4.2 内置预设
 
-| 类别 | 预设 | 默认模型/端点要点 | 密钥 |
-| --- | --- | --- | --- |
-| 公用免费 | Pollinations 公共免费 | `https://text.pollinations.ai/openai`，模型 `openai` | 不需要 |
-| 免费额度 | 智谱 GLM | `https://open.bigmodel.cn/api/paas/v4`，`glm-4-flash` | 需要 |
-| 免费额度 | SiliconFlow（硅基流动） | `https://api.siliconflow.cn/v1` | 需要 |
-| 免费额度 | OpenRouter 免费模型 | `https://openrouter.ai/api/v1`，带 `:free` 的模型 | 需要 |
-| 免费额度 | Groq | `https://api.groq.com/openai/v1` | 需要 |
-| 免费额度 | Google Gemini | Gemini 原生 `generateContent`，`gemini-2.0-flash` | 需要 |
-| 付费 | OpenAI | `https://api.openai.com/v1`，`gpt-4o-mini` | 需要 |
-| 付费 | DeepSeek | `https://api.deepseek.com/v1`，`deepseek-chat` | 需要 |
-| 付费 | Moonshot（月之暗面） | `https://api.moonshot.cn/v1`，`moonshot-v1-8k` | 需要 |
-| 付费 | DashScope / 通义千问 | `https://dashscope.aliyuncs.com/compatible-mode/v1`，`qwen-plus` | 需要 |
-| 付费 | Together AI | `https://api.together.xyz/v1` | 需要 |
-| 付费 | Anthropic Claude | Anthropic Messages 原生协议，`claude-3-5-haiku-latest` | 需要 |
-| 本地 | Ollama 本地模型 | `http://127.0.0.1:11434/v1`，`qwen2.5:7b` | 默认不需要 |
-| 自定义 | 自定义 OpenAI 兼容端点 | 由管理员填写 Base URL/模型 | 按服务要求 |
+| 预设 | 默认模型/端点要点 | 密钥 |
+| --- | --- | --- |
+| OpenAI 兼容（默认） | 由管理员填写 Base URL/模型 | 按服务要求 |
+| OpenAI | `https://api.openai.com/v1`，`gpt-4o-mini` | 需要 |
+| DeepSeek | `https://api.deepseek.com/v1`，`deepseek-chat` | 需要 |
+| Moonshot（月之暗面） | `https://api.moonshot.cn/v1`，`moonshot-v1-8k` | 需要 |
+| Xiaomi MiMo | `https://api.xiaomimimo.com/v1`，`mimo-v2-flash` | 需要 |
+| DashScope / 通义千问 | `https://dashscope.aliyuncs.com/compatible-mode/v1`，`qwen-plus` | 需要 |
+| 智谱 GLM | `https://open.bigmodel.cn/api/paas/v4`，`glm-4-flash` | 需要 |
+| SiliconFlow（硅基流动） | `https://api.siliconflow.cn/v1` | 需要 |
+| Groq | `https://api.groq.com/openai/v1` | 需要 |
+| Together AI | `https://api.together.xyz/v1` | 需要 |
+| Google Gemini | Gemini 原生 `generateContent`，`gemini-2.0-flash` | 需要 |
+| Anthropic Claude | Anthropic Messages 原生协议，`claude-3-5-haiku-latest` | 需要 |
+| Ollama 本地模型 | `http://127.0.0.1:11434/v1`，`qwen2.5:7b` | 默认不需要 |
 
-这些预设的免费额度、模型可用性、限速和价格会变化。内置项只是起点，不构成供应商可用性或价格承诺。
+模型可用性、限速和价格以各供应商为准。内置项只是起点，不构成供应商可用性承诺。旧版本中的 Pollinations 与 OpenRouter 免费模型预设已移除，升级后会从设置中自动清理。
 
 ### 4.3 填写 API Key
 
@@ -177,7 +176,11 @@ $env:OPENAI_API_KEY = "你的密钥"   # 仅当前进程/会话，示例请勿�
 - **转人工复核（推荐）**：超时、限流、解析失败、未知风险都进入待复核，不自动播放。
 - **直接拦截**：失败条目直接进入拦截历史，不进入人工批准列表。
 
-**最大并发审查数**控制同一批候选中同时发出的 AI 请求数量，默认 3。调低可减少限速，调高可加快批次完成，但受供应商配额限制。
+**单次请求审查条数**决定多少条候选合并为一次 AI 请求，默认 5。同一请求内的条目共用一份系统提示词、各自放在独立的不可信数据块中，模型按序号逐条返回结果；某条缺失或格式无效时只有该条按失败处理。设为 1 则恢复逐条请求。
+
+**最大并发请求数**控制同时在途的 AI 请求数量，默认 3。调低可减少限速，调高可加快批次完成，但受供应商配额限制。
+
+**提前审查阈值**：已审查待播放的内容不多于该数量时，在后台提前获取并审查下一批，默认 1；设为 0 则等队列播完再获取。
 
 ### 4.6 系统提示词
 
@@ -200,20 +203,28 @@ $env:OPENAI_API_KEY = "你的密钥"   # 仅当前进程/会话，示例请勿�
 | 一言 | `hitokoto` | 停用，权重 1 | 社区提交内容，需自行评估；支持自定义查询参数。 |
 | 每日一句 | `dlystc` | 停用，权重 1 | 每日一句 API，可能有约 30 秒 CDN 缓存；支持分类路径。 |
 
-每个来源都提供启用开关和权重。权重越高被随机选中的概率越高；权重为 0 等同不参与。每次抓取最多尝试多次并生成稳定上游 ID：
+每个来源都提供启用开关、权重和「对该来源启用 AI 审查」开关。权重越高被随机选中的概率越高；权重为 0 等同不参与。每次抓取最多尝试多次并生成稳定上游 ID：
 
 - 来源提供原生 ID 时使用原生 ID；
 - 没有原生 ID 时使用内容 SHA-256，形如 `content-sha256:<hex>`；
 - 日志和队列界面会保留来源、请求 URL 和上游 ID，便于追查。
 
+### 5.1.1 自定义来源
+
+点击「内容来源」标题同行最右侧的添加按钮即可新增一个自定义来源，新来源会自动展开：
+
+- **自定义内容**：文本框中每行一条；也可点击导入按钮从本地 txt 文件追加内容。
+- **播放顺序**：顺序播放会记忆上次播放到的位置；随机播放每次随机抽取一条。
+- **对该来源启用 AI 审查**：自定义来源默认关闭，仅排除列表生效。
+- **删除该来源**：删除后其配置一并移除。
+
 ### 5.2 刷新与显示
 
+- **对该来源启用 AI 审查**（位于各来源中）：内置来源默认开启。关闭后该来源的内容不经 AI 审查直接进入播放队列，仅本地排除词仍会拦截，审计决策记为 `review_disabled`。
 - **刷新间隔**：默认约 30 秒；设为 0 关闭自动刷新。关闭后已审批队列仍可播放，但不会主动抓取新内容。
 - **字数限制**：按来源能力过滤过长内容；设为 0 通常表示禁用该限制。
 - **作者/出处**：可分别开关；支持同时展示或分开展示。
 - **动画**：可关闭换字动画或换句动画；若动画异常，关闭后更稳定。
-- **每批数量**：播放队列为空时一次抓取多少候选，范围 1–10。
-- **最大缓冲**：待复核 + 播放队列总数上限，范围 1–100。达到上限后暂停抓取。
 - **忽略词**：每行一个词；任何非空词出现在正文中就本地拦截，并记录 `local_ignore`。忽略词判断先于最终 AI 风险生效，命中即拦截。
 
 ### 5.3 本地忽略词建议
@@ -222,7 +233,7 @@ $env:OPENAI_API_KEY = "你的密钥"   # 仅当前进程/会话，示例请勿�
 
 ## 6. 人工复核流程
 
-打开发置页 **Motivation → 人工复核与播放队列**。
+打开发置页 **IslandQuotes → 人工复核与播放队列**。
 
 ### 6.1 状态说明
 
@@ -277,7 +288,7 @@ $env:OPENAI_API_KEY = "你的密钥"   # 仅当前进程/会话，示例请勿�
 
 ### 8.1 打开日志目录
 
-在 **AI 审查与供应商** 或 **人工复核与播放队列** 页面点击 **打开审计日志目录**。日志路径：
+在 **AI审查设置** 或 **人工复核与播放队列** 页面点击 **打开审计日志目录**。日志路径：
 
 ```text
 <PluginConfigFolder>\log\audit-yyyy-MM-dd.jsonl
@@ -344,9 +355,9 @@ $env:OPENAI_API_KEY = "你的密钥"   # 仅当前进程/会话，示例请勿�
 - 保留默认系统提示词的安全/格式约束，只追加规则；
 - 连接测试输出非 JSON 时也会判定失败。
 
-### 公用端点不可用或返回 429
+### 供应商返回 401 或 429
 
-Pollinations 公共端点可能限流、临时不可用或对匿名调用有配额。稍后重试或切换自备密钥供应商/本地 Ollama。公共端点不是生产 SLA。
+401 通常表示 API Key 错误或缺失；429 表示限流或额度不足。检查控制台配额后稍后重试，或切换到其他供应商/本地 Ollama。
 
 ### Ollama 连不上或模型不存在
 
@@ -365,7 +376,7 @@ ollama serve
 ## 10. 隐私与安全操作清单
 
 - 优先选择本地 Ollama 或机构批准的可信供应商。
-- Pollinations 公共匿名端点不适合敏感或可识别学生的内容。
+- 不要把敏感或可识别学生的内容发送给未经批准的供应商。
 - API Key 优先使用 `env:NAME`；直接写在 `settings.json` 时确保只有受控账户可读。
 - 不把密钥写入日志、截图、提示词、忽略词或自定义请求头 JSON。
 - 关闭不需要的完整提示词/响应日志，并定期清理旧日志。

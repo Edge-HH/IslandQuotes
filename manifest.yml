@@ -1,11 +1,11 @@
-﻿id: ink.motivation.quoteai
-name: Motivation · AI 每日一言
-description: AI 审查每日一言；低风险自动播放，中风险统一人工复核，高风险自动拦截。支持多供应商预设、免费公共端点、批量审查队列与完整审计日志。
-entranceAssembly: Motivation.dll
-url: https://github.com/local/Motivation
+﻿id: ink.islandquotes.quoteai
+name: IslandQuotes
+description: 可自定义的每日一言，可选启用 AI 审查：低风险自动播放，中风险人工复核，高风险自动拦截。支持多供应商预设、批量审查队列与审计日志。
+entranceAssembly: IslandQuotes.dll
+url: https://github.com/Edge-HH/IslandQuotes
 version: 1.0.0.0
 apiVersion: 2.0.0.0
-author: Motivation
-repoOwner: local
-repoName: Motivation
+author: Edge-HH
+repoOwner: Edge-HH
+repoName: IslandQuotes
 assetsRoot: main

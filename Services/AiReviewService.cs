@@ -5,10 +5,10 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using Motivation.Core;
-using Motivation.Models;
+using IslandQuotes.Core;
+using IslandQuotes.Models;
 
-namespace Motivation.Services;
+namespace IslandQuotes.Services;
 
 /// <summary>调用 OpenAI、Anthropic 或 Gemini 协议执行失败关闭的 AI 内容审查。</summary>
 public sealed class AiReviewService
@@ -113,15 +113,15 @@ public sealed class AiReviewService
     }
 
     /// <summary>用一条内置安全样例测试指定供应商的连通性和 JSON 输出能力。</summary>
-    public Task<AiReviewResult> TestAsync(AiProviderProfile profile, CancellationToken ct = default)
+    public Task<AiReviewResult> TestAsync(AiProviderProfile profile, string? content = null, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(profile);
 
         var quote = new QuoteContent
         {
-            Content = "路虽远，行则将至；事虽难，做则必成。",
+            Content = string.IsNullOrWhiteSpace(content) ? "路虽远，行则将至；事虽难，做则必成。" : content.Trim(),
             Title = "连接测试",
-            Author = "Motivation",
+            Author = "IslandQuotes",
             Source = "内置审查测试",
             Catalog = "connectivity-test",
             UpstreamId = "ai-connectivity-test",
@@ -141,6 +141,123 @@ public sealed class AiReviewService
             ct);
     }
 
+    /// <summary>向指定供应商查询可用模型列表；不写入审计日志，失败时抛出带中文说明的异常。</summary>
+    public async Task<IReadOnlyList<string>> ListModelsAsync(AiProviderProfile profile, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+
+        string baseUrl = (profile.BaseUrl ?? string.Empty).Trim();
+        if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out Uri? uri) ||
+            (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+        {
+            throw new InvalidOperationException("Base URL 必须是有效的 HTTP 或 HTTPS 地址。");
+        }
+
+        var secrets = new List<string>();
+        Dictionary<string, string> extraHeaders = ParseExtraHeaders(profile.ExtraHeadersJson);
+        AddSensitiveHeaderValues(extraHeaders, secrets);
+        AddSecret(secrets, PluginSettingsStore.ResolveSecret(profile.ApiKey ?? string.Empty));
+
+        int timeoutSeconds = Math.Clamp(profile.TimeoutSeconds > 0 ? profile.TimeoutSeconds : 45, 5, 180);
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeoutCts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, BuildModelsEndpoint(uri, profile.Protocol));
+        AddRequestHeaders(request, profile, extraHeaders);
+
+        using HttpResponseMessage response = await SharedHttpClient
+            .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeoutCts.Token)
+            .ConfigureAwait(false);
+        string responseBody = await response.Content.ReadAsStringAsync(timeoutCts.Token).ConfigureAwait(false);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            string apiMessage = ExtractApiErrorMessage(responseBody);
+            string detail = string.IsNullOrWhiteSpace(apiMessage) ? string.Empty : $"：{apiMessage}";
+            throw new InvalidOperationException(SanitizeText(
+                $"获取模型列表返回 HTTP {(int)response.StatusCode} ({response.ReasonPhrase}){detail}",
+                secrets));
+        }
+
+        using JsonDocument document = JsonDocument.Parse(responseBody);
+        JsonElement root = document.RootElement;
+        var models = new List<string>();
+        foreach (string arrayName in new[] { "data", "models" })
+        {
+            if (!TryGetPropertyIgnoreCase(root, arrayName, out JsonElement array) ||
+                array.ValueKind != JsonValueKind.Array)
+            {
+                continue;
+            }
+
+            foreach (JsonElement entry in array.EnumerateArray())
+            {
+                string? id = entry.ValueKind == JsonValueKind.String
+                    ? entry.GetString()
+                    : GetStringProperty(entry, "id") ?? GetStringProperty(entry, "name");
+                if (string.IsNullOrWhiteSpace(id)) continue;
+                if (id.StartsWith("models/", StringComparison.OrdinalIgnoreCase)) id = id["models/".Length..];
+                models.Add(id.Trim());
+            }
+        }
+
+        return models
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Order(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static Uri BuildModelsEndpoint(Uri baseUri, AiProtocol protocol)
+    {
+        string basePath = baseUri.GetLeftPart(UriPartial.Path).TrimEnd('/');
+        foreach (string suffix in new[] { "/chat/completions", "/messages" })
+        {
+            if (basePath.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+            {
+                basePath = basePath[..^suffix.Length];
+                break;
+            }
+        }
+
+        if (protocol == AiProtocol.GeminiGenerateContent)
+        {
+            int modelsIndex = basePath.LastIndexOf("/models", StringComparison.OrdinalIgnoreCase);
+            if (modelsIndex >= 0) basePath = basePath[..modelsIndex];
+        }
+
+        return new Uri(basePath + "/models" + baseUri.Query, UriKind.Absolute);
+    }
+
+    /// <summary>
+    /// 把多条引用合并到一次请求中审查，所有条目共用同一份系统提示词；返回结果与输入顺序一一对应。
+    /// 只有一条时与 <see cref="ReviewAsync(QuoteContent, string, string, CancellationToken)"/> 等价。
+    /// </summary>
+    public async Task<IReadOnlyList<AiReviewResult>> ReviewBatchAsync(
+        IReadOnlyList<(string ItemId, QuoteContent Quote)> items,
+        string refreshSessionId,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(items);
+        ct.ThrowIfCancellationRequested();
+        if (items.Count == 0) return [];
+
+        AiProviderProfile? profile = _settings.GetActiveProfile();
+        if (items.Count == 1 || profile is null)
+        {
+            var results = new AiReviewResult[items.Count];
+            for (int i = 0; i < items.Count; i++)
+                results[i] = await ReviewAsync(items[i].Quote, refreshSessionId, items[i].ItemId, ct).ConfigureAwait(false);
+            return results;
+        }
+
+        ReviewTarget[] targets = items
+            .Select(static item => new ReviewTarget(
+                item.ItemId ?? string.Empty,
+                item.Quote ?? throw new ArgumentException("待审引用不能为空。", nameof(items))))
+            .ToArray();
+        return await ReviewCoreAsync(targets, profile, refreshSessionId ?? string.Empty, ct).ConfigureAwait(false);
+    }
+
     private async Task<AiReviewResult> ReviewCoreAsync(
         QuoteContent quote,
         AiProviderProfile profile,
@@ -148,8 +265,23 @@ public sealed class AiReviewService
         string itemId,
         CancellationToken ct)
     {
+        AiReviewResult[] results = await ReviewCoreAsync(
+            [new ReviewTarget(itemId, quote)],
+            profile,
+            refreshSessionId,
+            ct).ConfigureAwait(false);
+        return results[0];
+    }
+
+    private async Task<AiReviewResult[]> ReviewCoreAsync(
+        IReadOnlyList<ReviewTarget> targets,
+        AiProviderProfile profile,
+        string refreshSessionId,
+        CancellationToken ct)
+    {
         ct.ThrowIfCancellationRequested();
 
+        bool isBatch = targets.Count > 1;
         string correlationId = Guid.NewGuid().ToString("N");
         AuditOptions auditOptions = ReadAuditOptions();
         PluginSettings settingsSnapshot = _settings.Settings;
@@ -160,7 +292,9 @@ public sealed class AiReviewService
             5,
             180);
 
-        (string systemPrompt, string userPrompt) = AiReviewPrompt.Create(quote, customSystemPrompt);
+        (string systemPrompt, string userPrompt) = isBatch
+            ? AiReviewPrompt.CreateBatch(targets.Select(static target => target.Quote).ToArray(), customSystemPrompt)
+            : AiReviewPrompt.Create(targets[0].Quote, customSystemPrompt);
         AiReviewResult result = CreateBaseResult(profile, systemPrompt, userPrompt);
         var secrets = new List<string>();
         var extraHeaders = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -181,17 +315,17 @@ public sealed class AiReviewService
             string resolvedKey = PluginSettingsStore.ResolveSecret(profile.ApiKey ?? string.Empty);
             AddSecret(secrets, resolvedKey);
 
-            requestBody = BuildRequestBody(profile, systemPrompt, userPrompt);
+            requestBody = BuildRequestBody(profile, systemPrompt, userPrompt, GetMaxOutputTokens(targets.Count));
             result.RequestBodyJson = requestBody;
         }
         catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or JsonException or FormatException)
         {
             preparationError = SanitizeText(ex.Message, secrets);
             result.Error = preparationError;
+            AiReviewResult[] failed = SplitResult(result, targets.Count);
             await TryWriteAiRequestAuditAsync(
-                quote,
+                targets,
                 refreshSessionId,
-                itemId,
                 correlationId,
                 result,
                 requestSent: false,
@@ -200,24 +334,22 @@ public sealed class AiReviewService
                 secrets,
                 ct).ConfigureAwait(false);
             await TryWriteAiReviewAuditAsync(
-                quote,
+                targets,
                 refreshSessionId,
-                itemId,
                 correlationId,
-                result,
+                failed,
                 responseBody: string.Empty,
                 rawContent: string.Empty,
                 rawReasoning: string.Empty,
                 auditOptions,
                 secrets,
                 ct).ConfigureAwait(false);
-            return result;
+            return failed;
         }
 
         await TryWriteAiRequestAuditAsync(
-            quote,
+            targets,
             refreshSessionId,
-            itemId,
             correlationId,
             result,
             requestSent: true,
@@ -230,6 +362,7 @@ public sealed class AiReviewService
         string responseBody = string.Empty;
         string rawContent = string.Empty;
         string rawReasoning = string.Empty;
+        AiReviewResult[]? parsedResults = null;
 
         try
         {
@@ -269,6 +402,16 @@ public sealed class AiReviewService
                 result.Error = SanitizeText(extractionError, secrets);
                 result.RawResponse = SanitizeText(responseBody, secrets);
             }
+            else if (isBatch)
+            {
+                IReadOnlyList<AiReviewResult> parsed = ParseBatchReviewResponse(rawContent, targets.Count, rawReasoning);
+                parsedResults = new AiReviewResult[targets.Count];
+                for (int i = 0; i < parsed.Count; i++)
+                {
+                    parsedResults[i] = CloneBase(result);
+                    CopyParsedResult(parsed[i], parsedResults[i]);
+                }
+            }
             else
             {
                 AiReviewResult parsed = ParseReviewResponse(rawContent, rawReasoning);
@@ -285,11 +428,10 @@ public sealed class AiReviewService
             result.DurationMs = stopwatch.ElapsedMilliseconds;
 
             await TryWriteAiReviewAuditAsync(
-                quote,
+                targets,
                 refreshSessionId,
-                itemId,
                 correlationId,
-                result,
+                SplitResult(result, targets.Count),
                 responseBody,
                 rawContent,
                 rawReasoning,
@@ -322,13 +464,18 @@ public sealed class AiReviewService
 
         stopwatch.Stop();
         result.DurationMs = stopwatch.ElapsedMilliseconds;
+        AiReviewResult[] results = parsedResults ?? SplitResult(result, targets.Count);
+        foreach (AiReviewResult item in results)
+        {
+            item.DurationMs = result.DurationMs;
+            item.AiRequestId = result.AiRequestId;
+        }
 
         await TryWriteAiReviewAuditAsync(
-            quote,
+            targets,
             refreshSessionId,
-            itemId,
             correlationId,
-            result,
+            results,
             responseBody,
             rawContent,
             rawReasoning,
@@ -336,7 +483,47 @@ public sealed class AiReviewService
             secrets,
             ct).ConfigureAwait(false);
 
-        return result;
+        return results;
+    }
+
+    private readonly record struct ReviewTarget(string ItemId, QuoteContent Quote);
+
+    /// <summary>批量审查需要为每条结果预留输出长度；单条保持原有上限。</summary>
+    private static int GetMaxOutputTokens(int itemCount)
+        => itemCount <= 1 ? 1024 : Math.Min(8192, 512 + itemCount * 384);
+
+    /// <summary>把整次请求的失败结果复制给每个条目，保证批量请求失败时每条都按失败关闭处理。</summary>
+    private static AiReviewResult[] SplitResult(AiReviewResult result, int count)
+    {
+        if (count == 1) return [result];
+
+        var results = new AiReviewResult[count];
+        for (int i = 0; i < count; i++)
+        {
+            results[i] = CloneBase(result);
+            CopyParsedResult(result, results[i]);
+        }
+        return results;
+    }
+
+    private static AiReviewResult CloneBase(AiReviewResult source)
+    {
+        return new AiReviewResult
+        {
+            IsSuccess = false,
+            Risk = RiskLevel.Unknown,
+            Confidence = 0,
+            AiProfileId = source.AiProfileId,
+            AiProviderName = source.AiProviderName,
+            AiModel = source.AiModel,
+            AiProtocol = source.AiProtocol,
+            AiEndpoint = source.AiEndpoint,
+            AiRequestId = source.AiRequestId,
+            RequestBodyJson = source.RequestBodyJson,
+            SystemPrompt = source.SystemPrompt,
+            UserPrompt = source.UserPrompt,
+            DurationMs = source.DurationMs
+        };
     }
 
     private static AiReviewResult CreateBaseResult(
@@ -419,12 +606,6 @@ public sealed class AiReviewService
     {
         if (path.EndsWith("/chat/completions", StringComparison.OrdinalIgnoreCase))
             return baseUri;
-
-        if (string.Equals(baseUri.Host, "text.pollinations.ai", StringComparison.OrdinalIgnoreCase) &&
-            path.EndsWith("/openai", StringComparison.OrdinalIgnoreCase))
-        {
-            return baseUri;
-        }
 
         return AppendPath(baseUri, "chat/completions");
     }
@@ -548,7 +729,8 @@ public sealed class AiReviewService
     private static string BuildRequestBody(
         AiProviderProfile profile,
         string systemPrompt,
-        string userPrompt)
+        string userPrompt,
+        int maxOutputTokens)
     {
         object body = profile.Protocol switch
         {
@@ -573,7 +755,7 @@ public sealed class AiReviewService
             AiProtocol.AnthropicMessages => new Dictionary<string, object?>
             {
                 ["model"] = profile.Model,
-                ["max_tokens"] = 1024,
+                ["max_tokens"] = maxOutputTokens,
                 ["temperature"] = 0.1,
                 ["system"] = systemPrompt,
                 ["messages"] = new object[]
@@ -608,7 +790,7 @@ public sealed class AiReviewService
                 ["generationConfig"] = new Dictionary<string, object?>
                 {
                     ["temperature"] = 0.1,
-                    ["maxOutputTokens"] = 1024,
+                    ["maxOutputTokens"] = maxOutputTokens,
                     ["responseMimeType"] = "application/json"
                 }
             },
@@ -813,6 +995,28 @@ public sealed class AiReviewService
         AuditOptions options,
         IEnumerable<string> secrets,
         CancellationToken ct)
+        => await TryWriteAiRequestAuditAsync(
+            [new ReviewTarget(itemId, quote)],
+            refreshSessionId,
+            correlationId,
+            result,
+            requestSent,
+            preparationError,
+            options,
+            secrets,
+            ct).ConfigureAwait(false);
+
+    /// <summary>每次请求只写一条 ai_request；批量请求的条目 id 以逗号连接。</summary>
+    private async Task TryWriteAiRequestAuditAsync(
+        IReadOnlyList<ReviewTarget> targets,
+        string refreshSessionId,
+        string correlationId,
+        AiReviewResult result,
+        bool requestSent,
+        string? preparationError,
+        AuditOptions options,
+        IEnumerable<string> secrets,
+        CancellationToken ct)
     {
         if (!options.Enabled) return;
 
@@ -825,6 +1029,7 @@ public sealed class AiReviewService
             ["model"] = result.AiModel,
             ["endpoint"] = result.AiEndpoint,
             ["requestSent"] = requestSent,
+            ["batchSize"] = targets.Count,
             ["requestBody"] = options.FullPrompts
                 ? SanitizeText(result.RequestBodyJson, secrets)
                 : "[omitted]",
@@ -841,9 +1046,9 @@ public sealed class AiReviewService
         {
             Stage = "ai_request",
             RefreshSessionId = refreshSessionId,
-            ItemId = itemId,
-            ProviderId = quote.ProviderId ?? string.Empty,
-            UpstreamId = quote.UpstreamId ?? string.Empty,
+            ItemId = string.Join(",", targets.Select(static target => target.ItemId)),
+            ProviderId = string.Join(",", targets.Select(static target => target.Quote.ProviderId ?? string.Empty).Distinct()),
+            UpstreamId = string.Join(",", targets.Select(static target => target.Quote.UpstreamId ?? string.Empty)),
             CorrelationId = correlationId,
             Data = data
         };
@@ -863,47 +1068,77 @@ public sealed class AiReviewService
         AuditOptions options,
         IEnumerable<string> secrets,
         CancellationToken ct)
+        => await TryWriteAiReviewAuditAsync(
+            [new ReviewTarget(itemId, quote)],
+            refreshSessionId,
+            correlationId,
+            [result],
+            responseBody,
+            rawContent,
+            rawReasoning,
+            options,
+            secrets,
+            ct).ConfigureAwait(false);
+
+    /// <summary>每个条目各写一条 ai_review，同一请求的条目共享 correlationId。</summary>
+    private async Task TryWriteAiReviewAuditAsync(
+        IReadOnlyList<ReviewTarget> targets,
+        string refreshSessionId,
+        string correlationId,
+        IReadOnlyList<AiReviewResult> results,
+        string responseBody,
+        string rawContent,
+        string rawReasoning,
+        AuditOptions options,
+        IEnumerable<string> secrets,
+        CancellationToken ct)
     {
         if (!options.Enabled) return;
 
-        var data = new Dictionary<string, object?>
+        for (int i = 0; i < targets.Count; i++)
         {
-            ["correlationId"] = correlationId,
-            ["aiProfileId"] = result.AiProfileId,
-            ["aiProviderName"] = result.AiProviderName,
-            ["protocol"] = result.AiProtocol,
-            ["model"] = result.AiModel,
-            ["isSuccess"] = result.IsSuccess,
-            ["risk"] = result.Risk,
-            ["confidence"] = result.Confidence,
-            ["categories"] = result.Categories,
-            ["reason"] = SanitizeText(result.Reason, secrets),
-            ["error"] = SanitizeText(result.Error, secrets),
-            ["requestId"] = result.AiRequestId,
-            ["durationMs"] = result.DurationMs,
-            ["responseBody"] = options.FullResponses
-                ? SanitizeText(responseBody, secrets)
-                : "[omitted]",
-            ["rawContent"] = options.FullResponses
-                ? SanitizeText(rawContent, secrets)
-                : "[omitted]",
-            ["rawReasoning"] = options.FullResponses
-                ? SanitizeText(rawReasoning, secrets)
-                : "[omitted]"
-        };
+            AiReviewResult result = results[i];
+            var data = new Dictionary<string, object?>
+            {
+                ["correlationId"] = correlationId,
+                ["aiProfileId"] = result.AiProfileId,
+                ["aiProviderName"] = result.AiProviderName,
+                ["protocol"] = result.AiProtocol,
+                ["model"] = result.AiModel,
+                ["isSuccess"] = result.IsSuccess,
+                ["risk"] = result.Risk,
+                ["confidence"] = result.Confidence,
+                ["categories"] = result.Categories,
+                ["reason"] = SanitizeText(result.Reason, secrets),
+                ["error"] = SanitizeText(result.Error, secrets),
+                ["requestId"] = result.AiRequestId,
+                ["durationMs"] = result.DurationMs,
+                ["batchSize"] = targets.Count,
+                ["batchIndex"] = i + 1,
+                ["responseBody"] = options.FullResponses
+                    ? SanitizeText(responseBody, secrets)
+                    : "[omitted]",
+                ["rawContent"] = options.FullResponses
+                    ? SanitizeText(rawContent, secrets)
+                    : "[omitted]",
+                ["rawReasoning"] = options.FullResponses
+                    ? SanitizeText(rawReasoning, secrets)
+                    : "[omitted]"
+            };
 
-        var evt = new AuditLogEvent
-        {
-            Stage = "ai_review",
-            RefreshSessionId = refreshSessionId,
-            ItemId = itemId,
-            ProviderId = quote.ProviderId ?? string.Empty,
-            UpstreamId = quote.UpstreamId ?? string.Empty,
-            CorrelationId = correlationId,
-            Data = data
-        };
+            var evt = new AuditLogEvent
+            {
+                Stage = "ai_review",
+                RefreshSessionId = refreshSessionId,
+                ItemId = targets[i].ItemId,
+                ProviderId = targets[i].Quote.ProviderId ?? string.Empty,
+                UpstreamId = targets[i].Quote.UpstreamId ?? string.Empty,
+                CorrelationId = correlationId,
+                Data = data
+            };
 
-        await TryWriteAuditBestEffortAsync(evt, ct).ConfigureAwait(false);
+            await TryWriteAuditBestEffortAsync(evt, ct).ConfigureAwait(false);
+        }
     }
 
     private async Task TryWriteAuditBestEffortAsync(AuditLogEvent evt, CancellationToken ct)
@@ -1288,72 +1523,18 @@ public sealed class AiReviewService
                     continue;
                 }
 
-                if (!TryGetPropertyIgnoreCase(reviewObject, "risk", out JsonElement riskElement))
+                if (!TryParseReviewObject(reviewObject, out RiskLevel risk, out double confidence, out string reason,
+                        out List<string> categories, out string objectError))
                 {
-                    lastError = "JSON 中缺少 risk 字段。";
-                    continue;
-                }
-
-                if (riskElement.ValueKind == JsonValueKind.Object &&
-                    TryGetAnyProperty(riskElement, out JsonElement nestedRisk, "level", "value", "risk", "label", "rating"))
-                {
-                    riskElement = nestedRisk;
-                }
-
-                if (!TryParseRisk(riskElement, out RiskLevel risk))
-                {
-                    lastError = "无法识别 risk，必须是 low、medium 或 high。";
-                    continue;
-                }
-
-                if (risk == RiskLevel.Unknown)
-                {
-                    lastError = "risk 不能为 unknown 或不确定。";
-                    continue;
-                }
-
-                if (!TryGetPropertyIgnoreCase(reviewObject, "confidence", out JsonElement confidenceElement) ||
-                    !TryParseConfidence(confidenceElement, out double confidence))
-                {
-                    lastError = "JSON 缺少有效的 confidence。";
-                    continue;
-                }
-
-                if (!TryGetPropertyIgnoreCase(reviewObject, "reason", out JsonElement reasonElement))
-                {
-                    lastError = "JSON 缺少 reason 字段。";
-                    continue;
-                }
-
-                string reason = ExtractTextValue(reasonElement).Trim();
-                if (reason.Length == 0)
-                {
-                    lastError = "reason 不能为空。";
-                    continue;
-                }
-
-                if (!TryGetAnyProperty(
-                        reviewObject,
-                        out JsonElement categoriesElement,
-                        "categories",
-                        "category",
-                        "tags"))
-                {
-                    lastError = "JSON 缺少 categories 字段。";
-                    continue;
-                }
-
-                if (categoriesElement.ValueKind is not JsonValueKind.Array and not JsonValueKind.String)
-                {
-                    lastError = "categories 必须是字符串数组。";
+                    lastError = objectError;
                     continue;
                 }
 
                 result.IsSuccess = true;
                 result.Risk = risk;
-                result.Confidence = Math.Clamp(confidence, 0d, 1d);
+                result.Confidence = confidence;
                 result.Reason = reason;
-                result.Categories = ExtractCategories(categoriesElement);
+                result.Categories = categories;
                 result.Error = string.Empty;
                 return result;
             }
@@ -1369,7 +1550,206 @@ public sealed class AiReviewService
         return result;
     }
 
-    private static List<string> GetJsonCandidates(string rawContent)
+    /// <summary>校验单个审查对象的 risk、confidence、reason、categories 字段。</summary>
+    private static bool TryParseReviewObject(
+        JsonElement reviewObject,
+        out RiskLevel risk,
+        out double confidence,
+        out string reason,
+        out List<string> categories,
+        out string error)
+    {
+        risk = RiskLevel.Unknown;
+        confidence = 0;
+        reason = string.Empty;
+        categories = [];
+        error = string.Empty;
+
+        if (!TryGetPropertyIgnoreCase(reviewObject, "risk", out JsonElement riskElement))
+        {
+            error = "JSON 中缺少 risk 字段。";
+            return false;
+        }
+
+        if (riskElement.ValueKind == JsonValueKind.Object &&
+            TryGetAnyProperty(riskElement, out JsonElement nestedRisk, "level", "value", "risk", "label", "rating"))
+        {
+            riskElement = nestedRisk;
+        }
+
+        if (!TryParseRisk(riskElement, out risk))
+        {
+            error = "无法识别 risk，必须是 low、medium 或 high。";
+            return false;
+        }
+
+        if (risk == RiskLevel.Unknown)
+        {
+            error = "risk 不能为 unknown 或不确定。";
+            return false;
+        }
+
+        if (!TryGetPropertyIgnoreCase(reviewObject, "confidence", out JsonElement confidenceElement) ||
+            !TryParseConfidence(confidenceElement, out confidence))
+        {
+            error = "JSON 缺少有效的 confidence。";
+            return false;
+        }
+
+        if (!TryGetPropertyIgnoreCase(reviewObject, "reason", out JsonElement reasonElement))
+        {
+            error = "JSON 缺少 reason 字段。";
+            return false;
+        }
+
+        reason = ExtractTextValue(reasonElement).Trim();
+        if (reason.Length == 0)
+        {
+            error = "reason 不能为空。";
+            return false;
+        }
+
+        if (!TryGetAnyProperty(
+                reviewObject,
+                out JsonElement categoriesElement,
+                "categories",
+                "category",
+                "tags"))
+        {
+            error = "JSON 缺少 categories 字段。";
+            return false;
+        }
+
+        if (categoriesElement.ValueKind is not JsonValueKind.Array and not JsonValueKind.String)
+        {
+            error = "categories 必须是字符串数组。";
+            return false;
+        }
+
+        confidence = Math.Clamp(confidence, 0d, 1d);
+        categories = ExtractCategories(categoriesElement);
+        return true;
+    }
+
+    /// <summary>
+    /// 解析批量审查响应，按 id（1 起的序号）把结果分配回各条目；
+    /// 缺失、重复或格式无效的条目单独判为失败，不影响其他条目。
+    /// </summary>
+    public static IReadOnlyList<AiReviewResult> ParseBatchReviewResponse(
+        string rawContent,
+        int count,
+        string? rawReasoning = null)
+    {
+        var results = new AiReviewResult[count];
+        for (int i = 0; i < count; i++)
+        {
+            results[i] = new AiReviewResult
+            {
+                IsSuccess = false,
+                Risk = RiskLevel.Unknown,
+                Confidence = 0,
+                Categories = [],
+                RawResponse = rawContent ?? string.Empty,
+                RawReasoning = rawReasoning ?? string.Empty,
+                Error = "批量响应中缺少该条目的审查结果。"
+            };
+        }
+
+        if (string.IsNullOrWhiteSpace(rawContent))
+        {
+            foreach (AiReviewResult result in results) result.Error = "AI 返回内容为空。";
+            return results;
+        }
+
+        foreach (string candidate in GetJsonCandidates(rawContent, includeArrays: true))
+        {
+            try
+            {
+                using JsonDocument document = JsonDocument.Parse(candidate, new JsonDocumentOptions
+                {
+                    AllowTrailingCommas = true,
+                    CommentHandling = JsonCommentHandling.Skip,
+                    MaxDepth = 64
+                });
+                JsonElement root = document.RootElement;
+                JsonElement array = root;
+                if (root.ValueKind == JsonValueKind.Object &&
+                    !TryGetAnyProperty(root, out array, "results", "items", "reviews"))
+                {
+                    continue;
+                }
+
+                if (array.ValueKind != JsonValueKind.Array) continue;
+
+                var seen = new HashSet<int>();
+                foreach (JsonElement entry in array.EnumerateArray())
+                {
+                    if (entry.ValueKind != JsonValueKind.Object ||
+                        !TryGetAnyProperty(entry, out JsonElement idElement, "id", "index") ||
+                        !TryParseBatchId(idElement, out int id) ||
+                        id < 1 || id > count)
+                    {
+                        continue;
+                    }
+
+                    AiReviewResult result = results[id - 1];
+                    if (!seen.Add(id))
+                    {
+                        // 同一 id 出现多次时无法判断哪条可信，整条按失败处理。
+                        result.IsSuccess = false;
+                        result.Risk = RiskLevel.Unknown;
+                        result.Confidence = 0;
+                        result.Reason = string.Empty;
+                        result.Categories = [];
+                        result.Error = "批量响应中该条目出现了多个结果。";
+                        continue;
+                    }
+
+                    if (TryParseReviewObject(entry, out RiskLevel risk, out double confidence, out string reason,
+                            out List<string> categories, out string error))
+                    {
+                        result.IsSuccess = true;
+                        result.Risk = risk;
+                        result.Confidence = confidence;
+                        result.Reason = reason;
+                        result.Categories = categories;
+                        result.Error = string.Empty;
+                    }
+                    else
+                    {
+                        result.Error = error;
+                    }
+                }
+
+                if (seen.Count == 0) continue;
+                return results;
+            }
+            catch (JsonException)
+            {
+                // 尝试下一个候选片段。
+            }
+        }
+
+        foreach (AiReviewResult result in results) result.Error = "AI 输出中未找到有效的批量审查 JSON。";
+        return results;
+    }
+
+    private static bool TryParseBatchId(JsonElement element, out int id)
+    {
+        id = 0;
+        return element.ValueKind switch
+        {
+            JsonValueKind.Number => element.TryGetInt32(out id),
+            JsonValueKind.String => int.TryParse(
+                (element.GetString() ?? string.Empty).Trim(),
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
+                out id),
+            _ => false
+        };
+    }
+
+    private static List<string> GetJsonCandidates(string rawContent, bool includeArrays = false)
     {
         var candidates = new List<string>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
@@ -1389,19 +1769,23 @@ public sealed class AiReviewService
             string fencedContent = match.Groups["content"].Value;
             AddCandidate(fencedContent);
             foreach (string balanced in FindBalancedJsonObjects(fencedContent)) AddCandidate(balanced);
+            if (includeArrays)
+                foreach (string balanced in FindBalancedJsonObjects(fencedContent, '[', ']')) AddCandidate(balanced);
         }
 
         foreach (string balanced in FindBalancedJsonObjects(rawContent)) AddCandidate(balanced);
+        if (includeArrays)
+            foreach (string balanced in FindBalancedJsonObjects(rawContent, '[', ']')) AddCandidate(balanced);
         return candidates;
     }
 
-    private static List<string> FindBalancedJsonObjects(string text)
+    private static List<string> FindBalancedJsonObjects(string text, char open = '{', char close = '}')
     {
         var objects = new List<string>();
 
         for (int start = 0; start < text.Length; start++)
         {
-            if (text[start] != '{') continue;
+            if (text[start] != open) continue;
 
             int depth = 0;
             bool inString = false;
@@ -1424,11 +1808,11 @@ public sealed class AiReviewService
                     continue;
                 }
 
-                if (current == '{')
+                if (current == open)
                 {
                     depth++;
                 }
-                else if (current == '}')
+                else if (current == close)
                 {
                     depth--;
                     if (depth == 0)

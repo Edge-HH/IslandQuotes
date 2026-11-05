@@ -8,9 +8,9 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Avalonia.Controls;
 using Avalonia.Media;
-using Motivation.Models;
+using IslandQuotes.Models;
 
-namespace Motivation.Services;
+namespace IslandQuotes.Services;
 
 /// <summary>名句请求失败时，保留可用于审计的请求信息。</summary>
 internal sealed class QuoteProviderRequestException : InvalidOperationException
@@ -47,7 +47,7 @@ internal static class RhesisHttp
         {
             Timeout = TimeSpan.FromSeconds(20)
         };
-        client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("Motivation", "1.0"));
+        client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("IslandQuotes", "1.0"));
 
         client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         return client;
@@ -224,7 +224,7 @@ public sealed class HitokotoProvider : IQuoteProvider, IQuoteProviderSettingsFac
         TextBox queryTextBox = new()
         {
             Text = config.GetOption(QueryOption),
-            PlaceholderText = "例如：c=i 或 c=k",
+            Watermark = "例如：c=i 或 c=k",
             MinWidth = 180
         };
         queryTextBox.TextChanged += (_, _) => config.SetOption(QueryOption, queryTextBox.Text);
@@ -493,7 +493,7 @@ public sealed class SainticProvider : IQuoteProvider, IQuoteProviderSettingsFact
         TextBox pathTextBox = new()
         {
             Text = config.GetOption(PathOption),
-            PlaceholderText = "all",
+            Watermark = "all",
             MinWidth = 180
         };
         pathTextBox.TextChanged += (_, _) => config.SetOption(PathOption, pathTextBox.Text);

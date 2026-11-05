@@ -3,7 +3,9 @@ param(
     [ValidateSet('Debug', 'Release')]
     [string]$Configuration = 'Release',
     [switch]$SkipBuild,
-    [switch]$TestPublicAI
+    [switch]$TestPublicAI,
+    [string]$AiEndpoint = '',
+    [string]$AiModel = ''
 )
 
 Set-StrictMode -Version 2.0
@@ -87,7 +89,7 @@ function Get-BigEndianUInt32([byte[]]$Bytes, [int]$Offset) {
 }
 
 Write-Host ''
-Write-Host 'Motivation acceptance verification' -ForegroundColor Cyan
+Write-Host 'IslandQuotes acceptance verification' -ForegroundColor Cyan
 Write-Host "Repository : $repoRoot"
 Write-Host "Config     : $Configuration"
 Write-Host "Build      : $(-not $SkipBuild)"
@@ -96,7 +98,7 @@ Write-Host ''
 
 Write-Host '[1/7] Required files and manifest' -ForegroundColor Cyan
 $manifestPath = Assert-File 'manifest.yml' 50
-$projectPath = Assert-File 'Motivation.csproj' 200
+$projectPath = Assert-File 'IslandQuotes.csproj' 200
 $pluginPath = Assert-File 'Plugin.cs' 100
 $readmePath = Assert-File 'README.md' 500
 $userGuidePath = Assert-File 'docs\USER_GUIDE.md' 500
@@ -116,14 +118,14 @@ if ($null -ne $manifestPath) {
     Add-Check 'manifest has required fields' ($missingFields.Count -eq 0) ("missing/empty: " + ($missingFields -join ', '))
 
     $manifestChecks = @(
-        @{ Name = "manifest id is ink.motivation.quoteai"; Actual = (Get-ManifestField $manifestPath 'id'); Expected = 'ink.motivation.quoteai' },
-        @{ Name = 'manifest entranceAssembly is Motivation.dll'; Actual = (Get-ManifestField $manifestPath 'entranceAssembly'); Expected = 'Motivation.dll' }
+        @{ Name = "manifest id is ink.islandquotes.quoteai"; Actual = (Get-ManifestField $manifestPath 'id'); Expected = 'ink.islandquotes.quoteai' },
+        @{ Name = 'manifest entranceAssembly is IslandQuotes.dll'; Actual = (Get-ManifestField $manifestPath 'entranceAssembly'); Expected = 'IslandQuotes.dll' }
     )
     foreach ($check in $manifestChecks) {
         Add-Check $check.Name ([string]::Equals([string]$check.Actual, [string]$check.Expected, [StringComparison]::Ordinal)) "expected '$($check.Expected)', got '$($check.Actual)'"
     }
     $nameValue = Get-ManifestField $manifestPath 'name'
-    Add-Check 'manifest name contains Motivation' ($nameValue -match 'Motivation') "name='$nameValue'"
+    Add-Check 'manifest name contains IslandQuotes' ($nameValue -match 'IslandQuotes') "name='$nameValue'"
     $versionValue = Get-ManifestField $manifestPath 'version'
     Add-Check 'manifest version is four-part numeric' ($versionValue -match '^\d+\.\d+\.\d+\.\d+$') "version='$versionValue'"
     $apiVersionValue = Get-ManifestField $manifestPath 'apiVersion'
@@ -137,13 +139,13 @@ if ($null -ne $projectPath) {
     $projectText = Read-Utf8 $projectPath
     try {
         [xml]$projectXml = $projectText
-        Add-Pass 'Motivation.csproj is well-formed XML'
+        Add-Pass 'IslandQuotes.csproj is well-formed XML'
     }
     catch {
-        Add-Fail 'Motivation.csproj is well-formed XML' $_.Exception.Message
+        Add-Fail 'IslandQuotes.csproj is well-formed XML' $_.Exception.Message
     }
-    Assert-TextContains 'project targets net10.0-windows' $projectText '<TargetFramework>net10.0-windows</TargetFramework>'
-    Assert-TextContains 'project assembly name is Motivation' $projectText '<AssemblyName>Motivation</AssemblyName>'
+    Assert-TextContains 'project targets net8.0-windows' $projectText '<TargetFramework>net8.0-windows</TargetFramework>'
+    Assert-TextContains 'project assembly name is IslandQuotes' $projectText '<AssemblyName>IslandQuotes</AssemblyName>'
     Assert-TextContains 'project references ClassIsland.PluginSdk' $projectText 'ClassIsland.PluginSdk'
     Assert-TextContains 'project copies manifest.yml' $projectText 'manifest.yml'
     Assert-TextContains 'project copies icon.png' $projectText 'icon.png'
@@ -211,21 +213,16 @@ $missingProviders = @($providerClasses | Where-Object { $codeText.IndexOf($_, [S
 Add-Check 'four extracted quote providers are implemented' ($missingProviders.Count -eq 0) ("missing: " + ($missingProviders -join ', '))
 
 $presetIds = @(
-    'pollinations-openai', 'openai', 'deepseek', 'moonshot', 'dashscope-qwen',
-    'zhipu-glm', 'siliconflow', 'openrouter-free', 'groq', 'together',
+    'openai', 'deepseek', 'moonshot', 'dashscope-qwen',
+    'zhipu-glm', 'siliconflow', 'groq', 'together',
     'google-gemini', 'anthropic', 'ollama-local', 'custom-openai-compatible'
 )
 $missingPresets = @($presetIds | Where-Object { $codeText.IndexOf($_, [StringComparison]::OrdinalIgnoreCase) -lt 0 })
 Add-Check 'all required AI provider presets are present' ($missingPresets.Count -eq 0) ("missing: " + ($missingPresets -join ', '))
-foreach ($category in @('AiProviderCategory.PublicFree', 'AiProviderCategory.FreeTier', 'AiProviderCategory.Paid', 'AiProviderCategory.Local', 'AiProviderCategory.Custom')) {
-    Assert-TextContains "provider category: $category" $codeText $category
-}
 foreach ($protocol in @('AiProtocol.OpenAiCompatible', 'AiProtocol.AnthropicMessages', 'AiProtocol.GeminiGenerateContent')) {
     Assert-TextContains "protocol support: $protocol" $codeText $protocol
 }
-Assert-TextContains 'Pollinations anonymous endpoint' $codeText 'https://text.pollinations.ai/openai'
-Assert-TextContains 'Pollinations preset is public/free' $codeText 'AiProviderCategory.PublicFree'
-Assert-TextContains 'Pollinations preset does not require a key' $codeText 'requiresApiKey: false'
+Assert-TextContains 'default AI preset is OpenAI-compatible' $codeText 'DefaultProfileId = "custom-openai-compatible"'
 Assert-TextContains 'content-derived upstream IDs are supported' $codeText 'content-sha256'
 Assert-TextContains 'upstream ID type is tracked' $codeText 'UpstreamIdKind'
 
@@ -307,13 +304,13 @@ Write-Host '[4/7] Documentation acceptance tokens' -ForegroundColor Cyan
 $readmeText = Read-Utf8 (Join-Path $repoRoot 'README.md')
 $userGuideText = Read-Utf8 (Join-Path $repoRoot 'docs\USER_GUIDE.md')
 $privacyText = Read-Utf8 (Join-Path $repoRoot 'docs\PRIVACY_SECURITY.md')
-foreach ($token in @('ExtraIsland', '.NET 10', 'CreateCipx', 'Pollinations', 'auto_pass', 'manual_required', 'auto_block', 'audit-', 'review-queue.json', 'env:OPENAI_API_KEY', 'Ollama')) {
+foreach ($token in @('ExtraIsland', '.NET 8', 'CreateCipx', 'auto_pass', 'manual_required', 'auto_block', 'audit-', 'review-queue.json', 'env:OPENAI_API_KEY', 'Ollama')) {
     Assert-TextContains "README covers: $token" $readmeText $token
 }
-foreach ($token in @('人工复核', '批准选中', 'FIFO', 'audit-', 'Ollama', '.NET 10')) {
+foreach ($token in @('人工复核', '批准选中', 'FIFO', 'audit-', 'Ollama', '.NET 8')) {
     Assert-TextContains "user guide covers: $token" $userGuideText $token
 }
-foreach ($token in @('settings.json', 'env:', 'Pollinations', 'fail-closed', '高风险', 'review-queue.json')) {
+foreach ($token in @('settings.json', 'env:', 'fail-closed', '高风险', 'review-queue.json')) {
     Assert-TextContains "privacy guide covers: $token" $privacyText $token
 }
 $sourcePathDiscrepancy = ($readmeText.IndexOf('Codes\extraisland', [StringComparison]::Ordinal) -ge 0) -and
@@ -404,11 +401,11 @@ elseif (Test-Path -LiteralPath $buildScript -PathType Leaf) {
     Add-Check "build succeeded ($Configuration + CIPX)" $buildSucceeded "build exit code: $buildExitCode"
 }
 
-$binDir = Join-Path $repoRoot ("bin\{0}\net10.0-windows" -f $Configuration)
-$assemblyPath = Join-Path $binDir 'Motivation.dll'
+$binDir = Join-Path $repoRoot ("bin\{0}\net8.0-windows" -f $Configuration)
+$assemblyPath = Join-Path $binDir 'IslandQuotes.dll'
 $builtManifestPath = Join-Path $binDir 'manifest.yml'
 $builtIconPath = Join-Path $binDir 'icon.png'
-$cipxPath = Join-Path $repoRoot 'cipx\Motivation.cipx'
+$cipxPath = Join-Path $repoRoot 'cipx\IslandQuotes.cipx'
 
 $canInspectBuild = $buildSucceeded -or $SkipBuild
 if ($canInspectBuild) {
@@ -425,7 +422,7 @@ if ($canInspectBuild) {
 
     if (Test-Path -LiteralPath $builtManifestPath -PathType Leaf) {
         $builtEntrance = Get-ManifestField $builtManifestPath 'entranceAssembly'
-        Add-Check 'built manifest entranceAssembly matches Motivation.dll' ($builtEntrance -eq 'Motivation.dll') "entranceAssembly='$builtEntrance'"
+        Add-Check 'built manifest entranceAssembly matches IslandQuotes.dll' ($builtEntrance -eq 'IslandQuotes.dll') "entranceAssembly='$builtEntrance'"
     }
 
     if (Test-Path -LiteralPath $cipxPath -PathType Leaf) {
@@ -436,14 +433,14 @@ if ($canInspectBuild) {
             $archive = [System.IO.Compression.ZipFile]::OpenRead($cipxPath)
             try {
                 $entryNames = @($archive.Entries | ForEach-Object { $_.FullName })
-                foreach ($requiredEntry in @('Motivation.dll', 'manifest.yml', 'icon.png')) {
+                foreach ($requiredEntry in @('IslandQuotes.dll', 'manifest.yml', 'icon.png')) {
                     Add-Check "CIPX contains $requiredEntry" ($entryNames -contains $requiredEntry) ("entries: " + ($entryNames -join ', '))
                 }
                 $entry = $archive.GetEntry('manifest.yml')
                 if ($null -ne $entry) {
                     $reader = New-Object System.IO.StreamReader($entry.Open(), [System.Text.Encoding]::UTF8)
                     try { $packagedManifest = $reader.ReadToEnd() } finally { $reader.Dispose() }
-                    Add-Check 'packaged manifest has Motivation.dll entrance' ($packagedManifest -match '(?m)^\s*entranceAssembly\s*:\s*Motivation\.dll\s*$') 'packaged manifest entranceAssembly mismatch'
+                    Add-Check 'packaged manifest has IslandQuotes.dll entrance' ($packagedManifest -match '(?m)^\s*entranceAssembly\s*:\s*IslandQuotes\.dll\s*$') 'packaged manifest entranceAssembly mismatch'
                 }
             }
             finally {
@@ -468,10 +465,13 @@ else {
 }
 
 Write-Host '[7/7] Optional live connectivity and summary' -ForegroundColor Cyan
-if ($TestPublicAI) {
+if ($TestPublicAI -and ([string]::IsNullOrWhiteSpace($AiEndpoint) -or [string]::IsNullOrWhiteSpace($AiModel))) {
+    Add-Fail 'live AI connectivity test' 'pass -AiEndpoint and -AiModel together with -TestPublicAI'
+}
+elseif ($TestPublicAI) {
     $publicScript = Join-Path $repoRoot 'scripts\test-public-ai.ps1'
     if (-not (Test-Path -LiteralPath $publicScript -PathType Leaf)) {
-        Add-Fail 'public Pollinations test script exists' "missing: $publicScript"
+        Add-Fail 'live AI test script exists' "missing: $publicScript"
     }
     else {
         $publicExitCode = -1
@@ -481,18 +481,18 @@ if ($TestPublicAI) {
             if ($PSVersionTable.PSEdition -ne 'Core') {
                 $publicArguments += @('-ExecutionPolicy', 'Bypass')
             }
-            $publicArguments += @('-File', $publicScript)
+            $publicArguments += @('-File', $publicScript, '-Endpoint', $AiEndpoint, '-Model', $AiModel)
             & $powerShellHost @publicArguments
             $publicExitCode = $LASTEXITCODE
         }
         catch {
-            Add-Fail 'public Pollinations connectivity test' $_.Exception.Message
+            Add-Fail 'live AI connectivity test' $_.Exception.Message
         }
-        Add-Check 'public Pollinations connectivity test' ($publicExitCode -eq 0) "test exit code: $publicExitCode"
+        Add-Check 'live AI connectivity test' ($publicExitCode -eq 0) "test exit code: $publicExitCode"
     }
 }
 else {
-    Add-Warn 'public Pollinations connectivity test' 'not run; pass -TestPublicAI to enable the optional anonymous live test'
+    Add-Warn 'live AI connectivity test' 'not run; pass -TestPublicAI -AiEndpoint <url> -AiModel <name> to enable the optional live test (API key from OPENAI_API_KEY)'
 }
 
 Write-Host ''

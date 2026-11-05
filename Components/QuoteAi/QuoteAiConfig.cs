@@ -1,9 +1,10 @@
-﻿using System.Text.Json.Serialization;
-using Motivation.Core;
-using Motivation.Models;
-using Motivation.Services;
+﻿using System.Collections.ObjectModel;
+using System.Text.Json.Serialization;
+using IslandQuotes.Core;
+using IslandQuotes.Models;
+using IslandQuotes.Services;
 
-namespace Motivation.Components.QuoteAi;
+namespace IslandQuotes.Components.QuoteAi;
 
 /// <summary>
 /// 每日一言组件的本地设置。AI 凭据与全局审查策略保存在插件设置中，不随组件设置持久化。
@@ -23,7 +24,22 @@ public sealed class QuoteAiConfig : ObservableObject
                 : new Dictionary<string, QuoteProviderConfig>(value, StringComparer.OrdinalIgnoreCase));
     }
 
-    public string IgnoreListString { get; set; } = string.Empty;
+    ObservableCollection<CustomQuoteSource> _customSources = [];
+
+    /// <summary>用户添加的自定义来源；启用状态、权重与 AI 审查开关保存在 <see cref="ProviderSettings"/> 中。</summary>
+    public ObservableCollection<CustomQuoteSource> CustomSources
+    {
+        get => _customSources;
+        set => SetProperty(ref _customSources, value ?? []);
+    }
+
+    string _ignoreListString = string.Empty;
+
+    public string IgnoreListString
+    {
+        get => _ignoreListString;
+        set => SetProperty(ref _ignoreListString, value ?? string.Empty);
+    }
 
     public DateTime LastUpdate { get; set; } = DateTime.Today;
 
@@ -37,7 +53,7 @@ public sealed class QuoteAiConfig : ObservableObject
         get => UpdateTimeGap.TotalSeconds;
         set
         {
-            double seconds = double.IsFinite(value) ? Math.Max(0, value) : 30;
+            double seconds = double.IsFinite(value) ? Math.Clamp(value, 0, 864000) : 30;
             TimeSpan next = TimeSpan.FromSeconds(seconds);
             if (UpdateTimeGap == next) return;
             UpdateTimeGap = next;
@@ -78,6 +94,7 @@ public sealed class QuoteAiConfig : ObservableObject
             _attributesRule = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(AttributesRuleIndex));
+            OnPropertyChanged(nameof(IsAttributesSeparate));
         }
     }
 
@@ -91,37 +108,8 @@ public sealed class QuoteAiConfig : ObservableObject
             : AttributesDisplayRule.Sametime;
     }
 
-    int _batchSize = 3;
-
-    /// <summary>缺少可播放内容时一次拉取并审查的候选数量。</summary>
-    public int BatchSize
-    {
-        get => _batchSize;
-        set
-        {
-            int next = Math.Clamp(value, 1, 10);
-            if (_batchSize == next) return;
-            _batchSize = next;
-            OnPropertyChanged();
-        }
-    }
-
-    int _maxBufferedItems = 12;
-
-    /// <summary>待复核和已排队内容的总缓冲上限。</summary>
-    public int MaxBufferedItems
-    {
-        get => _maxBufferedItems;
-        set
-        {
-            int next = Math.Clamp(value, 1, 100);
-            if (_maxBufferedItems == next) return;
-            _maxBufferedItems = next;
-            OnPropertyChanged();
-        }
-    }
-
-    public bool ShowQueueStatus { get; set; } = true;
+    [JsonIgnore]
+    public bool IsAttributesSeparate => AttributesRule == AttributesDisplayRule.Separate;
 
     public enum AttributesDisplayRule
     {
@@ -145,11 +133,39 @@ public sealed class QuoteAiConfig : ObservableObject
             ProviderSettings[provider.Id] = new QuoteProviderConfig
             {
                 IsEnabled = provider.IsEnabledByDefault,
-                Weight = provider.DefaultWeight
+                Weight = provider.DefaultWeight,
+                IsAiReviewEnabled = provider.IsAiReviewEnabledByDefault
             };
             changed = true;
         }
 
         if (changed) OnPropertyChanged(nameof(ProviderSettings));
+    }
+
+    /// <summary>为当前的自定义来源创建来源实例，并补齐它们的默认配置。</summary>
+    public IReadOnlyList<IQuoteProvider> CreateCustomProviders()
+    {
+        IQuoteProvider[] providers = CustomSources
+            .Where(source => source is not null)
+            .Select(source => (IQuoteProvider)new CustomQuoteProvider(source))
+            .ToArray();
+        EnsureProviderSettings(providers);
+        return providers;
+    }
+
+    public CustomQuoteSource AddCustomSource()
+    {
+        var source = new CustomQuoteSource { Name = $"自定义来源 {CustomSources.Count + 1}" };
+        EnsureProviderSettings([new CustomQuoteProvider(source)]);
+        CustomSources.Add(source);
+        OnPropertyChanged(nameof(CustomSources));
+        return source;
+    }
+
+    public void RemoveCustomSource(CustomQuoteSource source)
+    {
+        if (!CustomSources.Remove(source)) return;
+        ProviderSettings.Remove(source.ProviderId);
+        OnPropertiesChanged(nameof(ProviderSettings), nameof(CustomSources));
     }
 }

@@ -1,8 +1,8 @@
-# Motivation · AI 每日一言 测试报告
+# IslandQuotes · AI 每日一言 测试报告
 
 - 记录时间：2026-11-05 18:18–18:42（+08:00）
 - 执行角色：QA / documentation engineer
-- 被验仓库：`C:\Users\user\Documents\Code\Motivation`
+- 被验仓库：`C:\Users\user\Documents\Code\IslandQuotes`
 - 结论：Release 编译、CIPX 打包、静态验收、核心服务 headless 测试和无密钥 Pollinations 连通性测试通过；ClassIsland 宿主内的实际导入、界面点击和动画未在本环境执行，不能视为已验证。
 
 ## 1. 环境和来源
@@ -11,11 +11,11 @@
 | --- | --- |
 | OS | Windows 10.0.19045 x64 |
 | .NET SDK | `10.0.403`（运行时 `10.0.14`） |
-| SDK 路径 | `C:\Users\user\Documents\Code\Motivation\.tools\dotnet\dotnet.exe` |
+| SDK 路径 | `C:\Users\user\Documents\Code\IslandQuotes\.tools\dotnet\dotnet.exe` |
 | PowerShell | Windows PowerShell `5.1.19041.4291`；本机未安装 `pwsh` |
 | 目标框架 | `net10.0-windows` |
 | ClassIsland SDK | `ClassIsland.PluginSdk` `2.1.1.1` |
-| 插件清单 | ID `ink.motivation.quoteai`，入口 `Motivation.dll`，版本 `1.0.0.0`，API `2.0.0.0` |
+| 插件清单 | ID `ink.islandquotes.quoteai`，入口 `IslandQuotes.dll`，版本 `1.0.0.0`，API `2.0.0.0` |
 
 初始任务说明提到从 ExtraIsland 的「名句一言」组件提取并重构。需求记录的旧源码路径是 `C:\Users\user\Documents\Codes\extraisland`，实际核对到的源码是 `C:\Users\user\Documents\Code\ExtraIsland\ExtraIsland\Components\Rhesis\`，来源实现位于 `...\Shared\RhesisProviders.cs`。该路径差异已写入 README。
 
@@ -73,7 +73,7 @@ error MSB3073: 命令「pwsh ... generate-md5.ps1」已退出，代码为 9009�
 最终任务要求的 raw 命令已在本机实际通过：
 
 ```powershell
-.\.tools\dotnet\dotnet.exe build .\Motivation.csproj -c Release -p:CreateCipx=true
+.\.tools\dotnet\dotnet.exe build .\IslandQuotes.csproj -c Release -p:CreateCipx=true
 ```
 
 ### 3.3 最终构建命令
@@ -84,19 +84,19 @@ error MSB3073: 命令「pwsh ... generate-md5.ps1」已退出，代码为 9009�
 # 10.0.403
 
 # 还原
-.\.tools\dotnet\dotnet.exe restore .\Motivation.csproj
+.\.tools\dotnet\dotnet.exe restore .\IslandQuotes.csproj
 # exit 0
 
 # 最终 Debug
-.\.tools\dotnet\dotnet.exe build .\Motivation.csproj -c Debug
+.\.tools\dotnet\dotnet.exe build .\IslandQuotes.csproj -c Debug
 # exit 0, 0 warnings, 0 errors, 2.25 s
 
 # Clean Release rebuild + CIPX
-.\.tools\dotnet\dotnet.exe build .\Motivation.csproj -c Release -t:Rebuild -p:CreateCipx=true -p:PowershellBinaryName=powershell.exe
+.\.tools\dotnet\dotnet.exe build .\IslandQuotes.csproj -c Release -t:Rebuild -p:CreateCipx=true -p:PowershellBinaryName=powershell.exe
 # exit 0, 0 warnings, 0 errors, 5.98 s
 
 # 任务要求的 raw 命令（未加额外属性）
-.\.tools\dotnet\dotnet.exe build .\Motivation.csproj -c Release -p:CreateCipx=true
+.\.tools\dotnet\dotnet.exe build .\IslandQuotes.csproj -c Release -p:CreateCipx=true
 # exit 0, 0 warnings, 0 errors, 2.83 s
 ```
 
@@ -107,43 +107,43 @@ error MSB3073: 命令「pwsh ... generate-md5.ps1」已退出，代码为 9009�
 
 | 产物 | 大小 | SHA-256 |
 | --- | ---: | --- |
-| `bin\Release\net10.0-windows\Motivation.dll` | 282,112 bytes | `C3859CCFE543217AEB53786BD03209080335A9DD0972418FBC75AD0D9669D195` |
+| `bin\Release\net10.0-windows\IslandQuotes.dll` | 282,112 bytes | `C3859CCFE543217AEB53786BD03209080335A9DD0972418FBC75AD0D9669D195` |
 | `bin\Release\net10.0-windows\manifest.yml` | 458 bytes | 见源文件 |
 | `bin\Release\net10.0-windows\icon.png` | 28,066 bytes | `790DB60E491E1C3D3744592D2C0D30D2A98F4DBF4B9FEF8B4557EAB60E882666` |
-| `cipx\Motivation.cipx` | 198,704 bytes | `9E935018865EA4DAA5F09EEFE0F476B0E11A39EE82DD62185730E10A650D9E60` |
+| `cipx\IslandQuotes.cipx` | 198,704 bytes | `9E935018865EA4DAA5F09EEFE0F476B0E11A39EE82DD62185730E10A650D9E60` |
 | `cipx\checksums.md` | 174 bytes | 内容见下 |
 
 CIPX 包内 ClassIsland 生成的 MD5：
 
 ```text
-<!-- CLASSISLAND_PKG_MD5 {"Motivation.cipx":"5A667D655D6F22F6DBC41F460650E962"} -->
+<!-- CLASSISLAND_PKG_MD5 {"IslandQuotes.cipx":"5A667D655D6F22F6DBC41F460650E962"} -->
 ```
 
-使用 `System.IO.Compression.ZipFile` 实际打开 `cipx\Motivation.cipx`，确认包含：
+使用 `System.IO.Compression.ZipFile` 实际打开 `cipx\IslandQuotes.cipx`，确认包含：
 
-- `Motivation.dll`
+- `IslandQuotes.dll`
 - `manifest.yml`
 - `icon.png`
 - `LICENSE.txt`
-- `Motivation.deps.json`
-- `Motivation.runtimeconfig.json`
-- `Motivation.pdb`
+- `IslandQuotes.deps.json`
+- `IslandQuotes.runtimeconfig.json`
+- `IslandQuotes.pdb`
 - `README.md`
 
-包内 `manifest.yml` 的 `entranceAssembly` 再次验证为 `Motivation.dll`。
+包内 `manifest.yml` 的 `entranceAssembly` 再次验证为 `IslandQuotes.dll`。
 
 ### 4.1 Manifest 静态检查
 
 以下字段存在且非空：`id`、`name`、`description`、`entranceAssembly`、`url`、`version`、`apiVersion`、`author`、`repoOwner`、`repoName`、`assetsRoot`。
 
-- `id` = `ink.motivation.quoteai`
-- `name` 包含 `Motivation`
-- `entranceAssembly` = `Motivation.dll`
+- `id` = `ink.islandquotes.quoteai`
+- `name` 包含 `IslandQuotes`
+- `entranceAssembly` = `IslandQuotes.dll`
 - `version` = 四段数字 `1.0.0.0`
 - `apiVersion` = `2.0.0.0`
 - URL 格式为 http(s)
 
-发布元数据仍是本地占位值：`manifest.yml:5` 的 `url: https://github.com/local/Motivation`、`:8` 的 `author: Motivation`、`:9` 的 `repoOwner: local`。这不影响本地编译/导入测试，但正式发布前应替换为真实的作者与仓库地址。
+发布元数据仍是本地占位值：`manifest.yml:5` 的 `url: https://github.com/local/IslandQuotes`、`:8` 的 `author: IslandQuotes`、`:9` 的 `repoOwner: local`。这不影响本地编译/导入测试，但正式发布前应替换为真实的作者与仓库地址。
 
 ### 4.2 图标
 
@@ -171,7 +171,7 @@ exit 0
 
 - 必需文件存在：manifest、项目、Plugin.cs、README、用户指南、隐私文档、图标、核心服务源码。
 - manifest 必需字段、ID、入口程序集、版本、API 版本、http(s) URL。
-- `.csproj` 为合法 XML、目标 `net10.0-windows`、程序集名 `Motivation`、引用 `ClassIsland.PluginSdk`、复制 manifest/icon。
+- `.csproj` 为合法 XML、目标 `net10.0-windows`、程序集名 `IslandQuotes`、引用 `ClassIsland.PluginSdk`、复制 manifest/icon。
 - `Plugin.cs` 有 `[PluginEntrance]`、继承 `PluginBase`、调用 `PluginRuntime.Initialize`、注册组件和设置页。
 - 四个名句来源类及 upstream ID/`content-sha256` 机制。
 - 全部 14 个 AI 预设 ID、五类分类、三种协议、Pollinations 匿名/免密钥/公共免费声明。
@@ -222,10 +222,10 @@ exit 0
 
 ## 7. Headless 核心服务测试
 
-为验证纯服务逻辑而不依赖 ClassIsland GUI，在 `%TEMP%` 建立临时 .NET 10 console harness，引用 `Motivation.csproj`，未提交进仓库。实际执行的典型命令：
+为验证纯服务逻辑而不依赖 ClassIsland GUI，在 `%TEMP%` 建立临时 .NET 10 console harness，引用 `IslandQuotes.csproj`，未提交进仓库。实际执行的典型命令：
 
 ```powershell
-.\.tools\dotnet\dotnet.exe run -c Release --project "$env:TEMP\motivation-qa-harness\MotivationQaHarness.csproj"
+.\.tools\dotnet\dotnet.exe run -c Release --project "$env:TEMP\islandquotes-qa-harness\IslandQuotesQaHarness.csproj"
 ```
 
 ### 7.1 本地逻辑：36/36 通过
@@ -243,8 +243,8 @@ exit 0
 打开临时 harness 的 provider 开关后，再使用同一个 console 项目实际请求四个来源：
 
 ```powershell
-$env:MOTIVATION_QA_PROVIDERS = "1"
-.\.tools\dotnet\dotnet.exe run -c Release --project "$env:TEMP\motivation-qa-harness\MotivationQaHarness.csproj"
+$env:ISLANDQUOTES_QA_PROVIDERS = "1"
+.\.tools\dotnet\dotnet.exe run -c Release --project "$env:TEMP\islandquotes-qa-harness\IslandQuotesQaHarness.csproj"
 ```
 
 实际结果为 **56/56 通过，0 失败**（36 个基础检查 + 4 个 provider 各 5 个断言）：
@@ -274,17 +274,17 @@ LIVE AI RESULT: success=True; risk=Low; confidence=0.95;
 requestId 非空; error 为空
 ```
 
-第一次 standalone live AI 运行在加入去重/provider kind 断言前为 38/38 通过。随后将 `MOTIVATION_QA_PROVIDERS=1` 与 `MOTIVATION_QA_LIVE=1` 同时开启做最终综合运行，实际结果为 **60/60 通过，0 失败**（36 个基础 + 20 个 provider + 4 个 live AI 断言）。第一次的 402 已作为公共端点限流事实保留在报告中，不隐藏。
+第一次 standalone live AI 运行在加入去重/provider kind 断言前为 38/38 通过。随后将 `ISLANDQUOTES_QA_PROVIDERS=1` 与 `ISLANDQUOTES_QA_LIVE=1` 同时开启做最终综合运行，实际结果为 **60/60 通过，0 失败**（36 个基础 + 20 个 provider + 4 个 live AI 断言）。第一次的 402 已作为公共端点限流事实保留在报告中，不隐藏。
 ### 7.4 Host assembly type-load smoke (lead, final artifact)
 
 A final reflection-only load test resolved the release plugin assembly against the locally installed
 ClassIsland 2.1.0.1 host directory (without launching or modifying the host). All plugin entry types
 loaded successfully:
 
-- `Motivation.Plugin` derives from `ClassIsland.Core.Abstractions.PluginBase`;
-- `Motivation.Components.QuoteAi.QuoteAiComponent` derives from `ComponentBase<QuoteAiConfig>`;
-- `Motivation.SettingsPages.AiSettingsPage` derives from `SettingsPageBase`;
-- `Motivation.SettingsPages.ReviewQueuePage` derives from `SettingsPageBase`.
+- `IslandQuotes.Plugin` derives from `ClassIsland.Core.Abstractions.PluginBase`;
+- `IslandQuotes.Components.QuoteAi.QuoteAiComponent` derives from `ComponentBase<QuoteAiConfig>`;
+- `IslandQuotes.SettingsPages.AiSettingsPage` derives from `SettingsPageBase`;
+- `IslandQuotes.SettingsPages.ReviewQueuePage` derives from `SettingsPageBase`.
 
 Result: `LOAD RESULT: PASS` (4/4 type-load checks). This validates assembly/type compatibility with the
 installed host dependencies, but it is not a substitute for importing the CIPX into a real ClassIsland
@@ -337,7 +337,7 @@ This documentation-only mismatch is resolved and is not an open defect.
 
 ### 10.2 发布元数据仍是占位值
 
-`manifest.yml:5` 的 URL 为 `https://github.com/local/Motivation`，`:8` 的作者为 `Motivation`，`:9` 的 repoOwner 为 `local`。本地构建/包结构正常，但正式分发前应替换为真实作者/仓库信息，否则插件市场/更新链接可能无效。
+`manifest.yml:5` 的 URL 为 `https://github.com/local/IslandQuotes`，`:8` 的作者为 `IslandQuotes`，`:9` 的 repoOwner 为 `local`。本地构建/包结构正常，但正式分发前应替换为真实作者/仓库信息，否则插件市场/更新链接可能无效。
 
 ### 10.3 公共免费端点限流与隐私
 
@@ -359,7 +359,7 @@ Free limit reached: 1 reply every 45 seconds per IP. Retry after 14s
 当前构建、核心服务和端点已验证，但 ClassIsland 的实际 XAML/控件渲染、设置页事件绑定、DI 生命周期和 CIPX 安装流程仍依赖宿主环境。建议发布前按 README 首次运行步骤在真实 ClassIsland v2 上做一次手动验收，并检查：
 
 - 组件是否出现在组件列表；
-- 两个设置页是否可从 Motivation 设置组打开；
+- 两个设置页是否可从 IslandQuotes 设置组打开；
 - 中风险条目能否勾选/批量批准/拒绝；
 - 高风险历史是否隐藏正文；
 - 队列重启恢复是否符合描述；

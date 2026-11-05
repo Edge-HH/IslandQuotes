@@ -2,11 +2,11 @@
 using System.Diagnostics;
 using System.IO;
 using Avalonia.Threading;
-using Motivation.Core;
-using Motivation.Models;
-using Motivation.Services;
+using IslandQuotes.Core;
+using IslandQuotes.Models;
+using IslandQuotes.Services;
 
-namespace Motivation.ViewModels;
+namespace IslandQuotes.ViewModels;
 
 /// <summary>人工复核与播放队列页面的视图模型。</summary>
 public sealed class ReviewQueueViewModel : ObservableObject
@@ -21,6 +21,11 @@ public sealed class ReviewQueueViewModel : ObservableObject
     bool _isAvailable;
     string _queueStatusMessage = string.Empty;
     string _actionStatusMessage = string.Empty;
+    ReviewQueueItem[] _historySnapshot = [];
+    int _historyPageIndex;
+
+    /// <summary>审查历史每页显示的条数。</summary>
+    public const int HistoryPageSize = 10;
 
     public ReviewQueueViewModel()
     {
@@ -71,6 +76,18 @@ public sealed class ReviewQueueViewModel : ObservableObject
 
     public bool HasHistory => History.Count > 0;
 
+    public int HistoryTotalCount => _historySnapshot.Length;
+
+    public int HistoryPageCount => Math.Max(1, (_historySnapshot.Length + HistoryPageSize - 1) / HistoryPageSize);
+
+    public bool HasMultipleHistoryPages => HistoryPageCount > 1;
+
+    public bool CanGoToPreviousHistoryPage => _historyPageIndex > 0;
+
+    public bool CanGoToNextHistoryPage => _historyPageIndex < HistoryPageCount - 1;
+
+    public string HistoryPageLabel => $"第 {_historyPageIndex + 1} / {HistoryPageCount} 页，共 {HistoryTotalCount} 条";
+
     public string LastStatusMessage
     {
         get => _queueStatusMessage;
@@ -119,10 +136,11 @@ public sealed class ReviewQueueViewModel : ObservableObject
 
             ReplaceRows(PendingManualReview, _queue.PendingManualReview, playback: false);
             ReplaceRows(PlaybackQueue, _queue.PlaybackQueue, playback: true);
-            ReplaceRows(History, _queue.History, playback: false);
+            // 服务端按决定顺序追加历史，倒序后即为新的在前。
+            _historySnapshot = _queue.History.Reverse().ToArray();
+            ShowHistoryPage(_historyPageIndex);
 
             LastStatusMessage = SanitizeStatus(_queue.LastStatusMessage);
-            OnPropertyChanged(nameof(HasHistory));
             OnPropertyChanged(nameof(StatusMessage));
         }
         catch
@@ -156,7 +174,7 @@ public sealed class ReviewQueueViewModel : ObservableObject
             EnsureQueueBound();
             _queue?.Reject(item);
             Refresh();
-            SetActionStatus("已拒绝选中的待复核内容，该内容不会进入播放队列。");
+            SetActionStatus(string.Empty);
         }
         catch
         {
@@ -184,9 +202,9 @@ public sealed class ReviewQueueViewModel : ObservableObject
         try
         {
             EnsureQueueBound();
-            int count = _queue?.RejectAllPending("全量人工拒绝") ?? 0;
+            _queue?.RejectAllPending("全量人工拒绝");
             Refresh();
-            SetActionStatus($"已拒绝全部待复核内容，共 {count} 条。");
+            SetActionStatus(string.Empty);
         }
         catch
         {
@@ -234,15 +252,36 @@ public sealed class ReviewQueueViewModel : ObservableObject
                 return;
             }
 
-            int count = _queue?.RejectSelected(selected, "批量人工拒绝") ?? 0;
+            _queue?.RejectSelected(selected, "批量人工拒绝");
             Refresh();
-            SetActionStatus($"已拒绝选中内容，共 {count} 条。");
+            SetActionStatus(string.Empty);
         }
         catch
         {
             SetActionStatus("拒绝选中内容失败。请刷新队列后重试。");
         }
     }
+    public void GoToPreviousHistoryPage() => ShowHistoryPage(_historyPageIndex - 1);
+
+    public void GoToNextHistoryPage() => ShowHistoryPage(_historyPageIndex + 1);
+
+    void ShowHistoryPage(int pageIndex)
+    {
+        _historyPageIndex = Math.Clamp(pageIndex, 0, HistoryPageCount - 1);
+        ReplaceRows(
+            History,
+            _historySnapshot.Skip(_historyPageIndex * HistoryPageSize).Take(HistoryPageSize),
+            playback: false);
+
+        OnPropertyChanged(nameof(HasHistory));
+        OnPropertyChanged(nameof(HistoryTotalCount));
+        OnPropertyChanged(nameof(HistoryPageCount));
+        OnPropertyChanged(nameof(HasMultipleHistoryPages));
+        OnPropertyChanged(nameof(CanGoToPreviousHistoryPage));
+        OnPropertyChanged(nameof(CanGoToNextHistoryPage));
+        OnPropertyChanged(nameof(HistoryPageLabel));
+    }
+
     void EnsureQueueBound()
     {
         _queue ??= PluginRuntime.Queue;

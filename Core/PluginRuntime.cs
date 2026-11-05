@@ -1,7 +1,7 @@
 using System.IO;
-using Motivation.Services;
+using IslandQuotes.Services;
 
-namespace Motivation.Core;
+namespace IslandQuotes.Core;
 
 /// <summary>
 /// 插件进程级运行时。Initialize 负责按依赖顺序构造服务且只构造一次；

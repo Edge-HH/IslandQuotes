@@ -4,9 +4,9 @@ using System.Collections.ObjectModel;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Motivation.Models;
+using IslandQuotes.Models;
 
-namespace Motivation.Services;
+namespace IslandQuotes.Services;
 
 /// <summary>
 /// 管理 AI 审查、待人工复核、FIFO 播放队列与历史记录。
@@ -52,7 +52,7 @@ public sealed class ReviewQueueService
     /// <summary>已通过审查、按入队顺序等待展示的条目。</summary>
     public ObservableCollection<ReviewQueueItem> PlaybackQueue { get; } = [];
 
-    /// <summary>已播放、已拒绝或已拦截的近期条目。</summary>
+    /// <summary>已播放、已拦截（含人工拒绝）的近期条目。</summary>
     public ObservableCollection<ReviewQueueItem> History { get; } = [];
 
     public event EventHandler? QueueChanged;
@@ -209,8 +209,8 @@ public sealed class ReviewQueueService
     public int RejectSelected(IEnumerable<ReviewQueueItem> items, string note = "批量人工拒绝")
         => ProcessManualDecision(SnapshotItems(items), false, note);
 
-    /// <summary>使用当前激活的 AI 供应商测试一段安全的内置文本。</summary>
-    public async Task<AiReviewResult> TestActiveAiAsync(CancellationToken ct = default)
+    /// <summary>使用当前激活的 AI 供应商审查一段测试文本；未提供时使用内置的良性文本。</summary>
+    public async Task<AiReviewResult> TestActiveAiAsync(string? content = null, CancellationToken ct = default)
     {
         AiProviderProfile? profile;
         try
@@ -232,26 +232,9 @@ public sealed class ReviewQueueService
             throw new InvalidOperationException("当前激活的 AI 供应商缺少接口地址或模型名称。");
         }
 
-        const string benignContent = "每天进步一点点。";
-        QuoteContent quote = new()
-        {
-            Content = benignContent,
-            Title = "Motivation 内置测试",
-            Author = "Motivation",
-            Source = "内置测试",
-            Catalog = "安全性测试",
-            UpstreamId = RhesisHttp.MakeContentDerivedId(benignContent),
-            UpstreamIdKind = "content-sha256",
-            ProviderId = "builtin-test",
-            ProviderName = "内置测试",
-            RequestMethod = "N/A",
-            RequestUrl = string.Empty,
-            FetchedAt = DateTimeOffset.Now
-        };
-
         try
         {
-            return await _ai.TestAsync(profile, ct).ConfigureAwait(false)
+            return await _ai.TestAsync(profile, content, ct).ConfigureAwait(false)
                 ?? new AiReviewResult
                 {
                     IsSuccess = false,
@@ -394,20 +377,35 @@ public sealed class ReviewQueueService
             .Select(term => term.Trim())
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
-        ReviewFailureAction failureAction = GetReviewSettings().FailureAction;
-        int maxConcurrent = Math.Clamp(GetReviewSettings().MaxConcurrentReviews, 1, 10);
+        ReviewSettings reviewSettings = GetReviewSettings();
+        ReviewFailureAction failureAction = reviewSettings.FailureAction;
+        int maxConcurrent = Math.Clamp(reviewSettings.MaxConcurrentReviews, 1, 10);
+        int itemsPerRequest = Math.Clamp(reviewSettings.ItemsPerReviewRequest, 1, 10);
         using SemaphoreSlim reviewLimiter = new(maxConcurrent, maxConcurrent);
-        Task<ReviewQueueItem>[] reviewTasks = fetched
-            .Select(candidate => ReviewCandidateAsync(
-                candidate.ItemId,
-                candidate.Quote,
-                sessionId,
-                ignoreTerms,
-                failureAction,
-                reviewLimiter,
-                ct))
+
+        // 需要 AI 审查的候选按「单次请求审查条数」分组，同组共用一次请求和一份系统提示词；
+        // 并发上限限制的是同时在途的请求数。
+        List<Task<ReviewQueueItem[]>> reviewTasks = [];
+        List<(string ItemId, QuoteContent Quote)> aiCandidates = [];
+        foreach ((string ItemId, QuoteContent Quote) candidate in fetched)
+        {
+            if (IsAiReviewEnabledFor(options, candidate.Quote))
+            {
+                aiCandidates.Add(candidate);
+                continue;
+            }
+
+            reviewTasks.Add(ApplyUnreviewedCandidateAsync(candidate.ItemId, candidate.Quote, sessionId, ignoreTerms, failureAction));
+        }
+
+        foreach ((string ItemId, QuoteContent Quote)[] group in aiCandidates.Chunk(itemsPerRequest))
+        {
+            reviewTasks.Add(ReviewGroupAsync(group, sessionId, ignoreTerms, failureAction, reviewLimiter, ct));
+        }
+
+        ReviewQueueItem[] reviewedItems = (await Task.WhenAll(reviewTasks).ConfigureAwait(false))
+            .SelectMany(static items => items)
             .ToArray();
-        ReviewQueueItem[] reviewedItems = await Task.WhenAll(reviewTasks).ConfigureAwait(false);
 
         int autoPassed = reviewedItems.Count(item => item.State == ReviewItemState.Approved);
         int pending = reviewedItems.Count(item => item.State == ReviewItemState.AwaitingManualReview);
@@ -460,9 +458,39 @@ public sealed class ReviewQueueService
         return reviewedItems.Length;
     }
 
-    private async Task<ReviewQueueItem> ReviewCandidateAsync(
+    /// <summary>按内容所属来源的配置决定是否送 AI 审查；找不到配置时保守地启用审查。</summary>
+    private static bool IsAiReviewEnabledFor(QuoteRequestOptions options, QuoteContent quote)
+    {
+        return options.ProviderSettings is null
+            || string.IsNullOrWhiteSpace(quote.ProviderId)
+            || !options.ProviderSettings.TryGetValue(quote.ProviderId, out QuoteProviderConfig? config)
+            || config is null
+            || config.IsAiReviewEnabled;
+    }
+
+    private static ReviewQueueItem CreateReviewingItem(string itemId, QuoteContent quote, string refreshSessionId) => new()
+    {
+        Id = itemId,
+        RefreshSessionId = refreshSessionId,
+        Quote = quote,
+        CreatedAt = DateTimeOffset.Now,
+        State = ReviewItemState.Reviewing
+    };
+
+    private async Task<ReviewQueueItem[]> ApplyUnreviewedCandidateAsync(
         string itemId,
         QuoteContent quote,
+        string refreshSessionId,
+        IReadOnlyList<string> ignoreTerms,
+        ReviewFailureAction failureAction)
+    {
+        ReviewQueueItem item = CreateReviewingItem(itemId, quote, refreshSessionId);
+        return [await ApplyUnreviewedDecisionAsync(item, quote, ignoreTerms, failureAction).ConfigureAwait(false)];
+    }
+
+    /// <summary>用一次 AI 请求审查一组候选，再逐条套用决策规则。</summary>
+    private async Task<ReviewQueueItem[]> ReviewGroupAsync(
+        (string ItemId, QuoteContent Quote)[] group,
         string refreshSessionId,
         IReadOnlyList<string> ignoreTerms,
         ReviewFailureAction failureAction,
@@ -472,22 +500,14 @@ public sealed class ReviewQueueService
         await reviewLimiter.WaitAsync(CancellationToken.None).ConfigureAwait(false);
         try
         {
-            ReviewQueueItem item = new()
-            {
-                Id = itemId,
-                RefreshSessionId = refreshSessionId,
-                Quote = quote,
-                CreatedAt = DateTimeOffset.Now,
-                State = ReviewItemState.Reviewing
-            };
-
-            AiReviewResult? result = null;
+            IReadOnlyList<AiReviewResult>? results = null;
             string reviewError = string.Empty;
             try
             {
-                result = await _ai.ReviewAsync(quote, refreshSessionId, itemId, ct).ConfigureAwait(false);
-                if (result is null)
+                results = await _ai.ReviewBatchAsync(group, refreshSessionId, ct).ConfigureAwait(false);
+                if (results is null || results.Count != group.Length)
                 {
+                    results = null;
                     reviewError = "AI 审查服务未返回结果。";
                 }
             }
@@ -500,107 +520,179 @@ public sealed class ReviewQueueService
                 reviewError = ex.Message;
             }
 
-            if (result is null)
+            var items = new ReviewQueueItem[group.Length];
+            for (int i = 0; i < group.Length; i++)
             {
-                result = new AiReviewResult
-                {
-                    IsSuccess = false,
-                    Risk = RiskLevel.Unknown,
-                    Confidence = 0,
-                    Reason = "AI 审查未完成。",
-                    Error = reviewError,
-                    Categories = []
-                };
+                items[i] = await ReviewCandidateAsync(
+                    group[i].ItemId,
+                    group[i].Quote,
+                    refreshSessionId,
+                    ignoreTerms,
+                    failureAction,
+                    results?[i],
+                    reviewError).ConfigureAwait(false);
             }
 
-            result.Categories ??= [];
-            try
-            {
-                item.ApplyResult(result);
-            }
-            catch (Exception ex)
-            {
-                reviewError = $"AI 返回结果无法应用：{ex.Message}";
-                result = new AiReviewResult
-                {
-                    IsSuccess = false,
-                    Risk = RiskLevel.Unknown,
-                    Confidence = 0,
-                    Reason = "AI 审查结果格式无效。",
-                    Error = reviewError,
-                    Categories = []
-                };
-                item.Risk = RiskLevel.Unknown;
-                item.Confidence = 0;
-                item.AiReason = result.Reason;
-                item.Categories = [];
-                item.ReviewedAt = DateTimeOffset.Now;
-            }
-
-            RiskLevel aiRisk = item.Risk;
-            bool aiSucceeded = result.IsSuccess
-                && result.Risk is RiskLevel.Low or RiskLevel.Medium or RiskLevel.High;
-            string? ignoredTerm = FindIgnoredTerm(quote.Content, ignoreTerms);
-            string decision;
-            if (ignoredTerm is not null)
-            {
-                string existingReason = string.IsNullOrWhiteSpace(item.AiReason)
-                    ? string.Empty
-                    : " AI reason: " + item.AiReason;
-                item.Risk = RiskLevel.High;
-                item.AiReason = "命中本地忽略词: " + ignoredTerm + "." + existingReason;
-                item.State = ReviewItemState.Blocked;
-                decision = "local_ignore";
-            }            else if (!aiSucceeded)
-            {
-                item.Risk = RiskLevel.Unknown;
-                item.State = failureAction == ReviewFailureAction.Block
-                    ? ReviewItemState.Blocked
-                    : ReviewItemState.AwaitingManualReview;
-                item.AiReason = string.IsNullOrWhiteSpace(item.AiReason)
-                    ? "AI 审查失败，已按失败关闭策略处理。"
-                    : item.AiReason;
-                decision = "ai_failure";
-            }
-            else
-            {
-                switch (result.Risk)
-                {
-                    case RiskLevel.Low:
-                        item.State = ReviewItemState.Approved;
-                        decision = "auto_pass";
-                        break;
-                    case RiskLevel.Medium:
-                        item.State = ReviewItemState.AwaitingManualReview;
-                        decision = "manual_required";
-                        break;
-                    case RiskLevel.High:
-                        item.State = ReviewItemState.Blocked;
-                        decision = "auto_block";
-                        break;
-                    default:
-                        item.Risk = RiskLevel.Unknown;
-                        item.State = failureAction == ReviewFailureAction.Block
-                            ? ReviewItemState.Blocked
-                            : ReviewItemState.AwaitingManualReview;
-                        decision = "ai_failure";
-                        break;
-                }
-            }
-            await WriteDecisionAuditSafeAsync(
-                item,
-                decision,
-                result,
-                ignoredTerm,
-                aiRisk,
-                failureAction,
-                reviewError).ConfigureAwait(false);
-            return item;
+            return items;
         }
         finally
         {
             reviewLimiter.Release();
         }
+    }
+
+    private async Task<ReviewQueueItem> ReviewCandidateAsync(
+        string itemId,
+        QuoteContent quote,
+        string refreshSessionId,
+        IReadOnlyList<string> ignoreTerms,
+        ReviewFailureAction failureAction,
+        AiReviewResult? result,
+        string reviewError)
+    {
+        ReviewQueueItem item = CreateReviewingItem(itemId, quote, refreshSessionId);
+
+        if (result is null)
+        {
+            result = new AiReviewResult
+            {
+                IsSuccess = false,
+                Risk = RiskLevel.Unknown,
+                Confidence = 0,
+                Reason = "AI 审查未完成。",
+                Error = reviewError,
+                Categories = []
+            };
+        }
+
+        result.Categories ??= [];
+        try
+        {
+            item.ApplyResult(result);
+        }
+        catch (Exception ex)
+        {
+            reviewError = $"AI 返回结果无法应用：{ex.Message}";
+            result = new AiReviewResult
+            {
+                IsSuccess = false,
+                Risk = RiskLevel.Unknown,
+                Confidence = 0,
+                Reason = "AI 审查结果格式无效。",
+                Error = reviewError,
+                Categories = []
+            };
+            item.Risk = RiskLevel.Unknown;
+            item.Confidence = 0;
+            item.AiReason = result.Reason;
+            item.Categories = [];
+            item.ReviewedAt = DateTimeOffset.Now;
+        }
+
+        RiskLevel aiRisk = item.Risk;
+        bool aiSucceeded = result.IsSuccess
+            && result.Risk is RiskLevel.Low or RiskLevel.Medium or RiskLevel.High;
+        string? ignoredTerm = FindIgnoredTerm(quote.Content, ignoreTerms);
+        string decision;
+        if (ignoredTerm is not null)
+        {
+            string existingReason = string.IsNullOrWhiteSpace(item.AiReason)
+                ? string.Empty
+                : " AI reason: " + item.AiReason;
+            item.Risk = RiskLevel.High;
+            item.AiReason = "命中本地忽略词: " + ignoredTerm + "." + existingReason;
+            item.State = ReviewItemState.Blocked;
+            decision = "local_ignore";
+        }            else if (!aiSucceeded)
+        {
+            item.Risk = RiskLevel.Unknown;
+            item.State = failureAction == ReviewFailureAction.Block
+                ? ReviewItemState.Blocked
+                : ReviewItemState.AwaitingManualReview;
+            item.AiReason = string.IsNullOrWhiteSpace(item.AiReason)
+                ? "AI 审查失败，已按失败关闭策略处理。"
+                : item.AiReason;
+            decision = "ai_failure";
+        }
+        else
+        {
+            switch (result.Risk)
+            {
+                case RiskLevel.Low:
+                    item.State = ReviewItemState.Approved;
+                    decision = "auto_pass";
+                    break;
+                case RiskLevel.Medium:
+                    item.State = ReviewItemState.AwaitingManualReview;
+                    decision = "manual_required";
+                    break;
+                case RiskLevel.High:
+                    item.State = ReviewItemState.Blocked;
+                    decision = "auto_block";
+                    break;
+                default:
+                    item.Risk = RiskLevel.Unknown;
+                    item.State = failureAction == ReviewFailureAction.Block
+                        ? ReviewItemState.Blocked
+                        : ReviewItemState.AwaitingManualReview;
+                    decision = "ai_failure";
+                    break;
+            }
+        }
+        await WriteDecisionAuditSafeAsync(
+            item,
+            decision,
+            result,
+            ignoredTerm,
+            aiRisk,
+            failureAction,
+            reviewError).ConfigureAwait(false);
+        return item;
+    }
+
+    /// <summary>来源未启用 AI 审查时的决策：仅应用本地排除词，其余直接进入播放队列。</summary>
+    private async Task<ReviewQueueItem> ApplyUnreviewedDecisionAsync(
+        ReviewQueueItem item,
+        QuoteContent quote,
+        IReadOnlyList<string> ignoreTerms,
+        ReviewFailureAction failureAction)
+    {
+        string? ignoredTerm = FindIgnoredTerm(quote.Content, ignoreTerms);
+        string decision;
+        item.ReviewedAt = DateTimeOffset.Now;
+        item.Categories = [];
+        if (ignoredTerm is not null)
+        {
+            item.Risk = RiskLevel.High;
+            item.AiReason = "命中本地忽略词: " + ignoredTerm + ".";
+            item.State = ReviewItemState.Blocked;
+            decision = "local_ignore";
+        }
+        else
+        {
+            item.Risk = RiskLevel.Unknown;
+            item.AiReason = "该来源未启用 AI 审查，未经审查直接播放。";
+            item.IsAiReviewSkipped = true;
+            item.State = ReviewItemState.Approved;
+            decision = "review_disabled";
+        }
+
+        AiReviewResult result = new()
+        {
+            IsSuccess = false,
+            Risk = RiskLevel.Unknown,
+            Reason = item.AiReason,
+            Categories = []
+        };
+        await WriteDecisionAuditSafeAsync(
+            item,
+            decision,
+            result,
+            ignoredTerm,
+            RiskLevel.Unknown,
+            failureAction,
+            string.Empty).ConfigureAwait(false);
+        return item;
     }
 
     private static bool AddQuoteIdentity(HashSet<string> known, QuoteContent? quote)
@@ -742,9 +834,9 @@ public sealed class ReviewQueueService
                 if (changed.Count > 0)
                 {
                     TrimHistoryLocked();
-                    string action = approve ? "人工批准" : "人工拒绝";
-                    UpdateCountsLocked(
-                        $"{action} {changed.Count} 条；待人工复核 {PendingCount}，播放队列 {QueuedCount}，已拦截 {BlockedCount}。");
+                    UpdateCountsLocked(null);
+                    string counts = $"待人工复核 {PendingCount}，播放队列 {QueuedCount}，已拦截 {BlockedCount}。";
+                    _lastStatusMessage = approve ? $"人工批准 {changed.Count} 条；{counts}" : counts;
                 }
                 else
                 {
@@ -1063,7 +1155,8 @@ public sealed class ReviewQueueService
     {
         Volatile.Write(ref _pendingCount, PendingManualReview.Count);
         Volatile.Write(ref _queuedCount, PlaybackQueue.Count);
-        Volatile.Write(ref _blockedCount, History.Count(item => item.State == ReviewItemState.Blocked));
+        Volatile.Write(ref _blockedCount, History.Count(item =>
+            item.State is ReviewItemState.Blocked or ReviewItemState.Rejected));
         if (statusMessage is not null)
         {
             _lastStatusMessage = statusMessage;

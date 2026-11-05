@@ -1,6 +1,6 @@
-using Motivation.Models;
+using IslandQuotes.Models;
 
-namespace Motivation.Services;
+namespace IslandQuotes.Services;
 
 /// <summary>负责从已启用的名句来源中按权重挑选并获取句子。</summary>
 public sealed class QuoteSourceService
@@ -67,7 +67,7 @@ public sealed class QuoteSourceService
         EnsureProviderSettings(options.ProviderSettings);
 
         List<(IQuoteProvider Provider, QuoteProviderConfig Config)> candidates =
-            GetEnabledCandidates(options.ProviderSettings);
+            GetEnabledCandidates(options.ProviderSettings, options.ExtraProviders);
 
         if (candidates.Count == 0)
         {
@@ -210,12 +210,13 @@ public sealed class QuoteSourceService
     }
 
     private List<(IQuoteProvider Provider, QuoteProviderConfig Config)> GetEnabledCandidates(
-        IReadOnlyDictionary<string, QuoteProviderConfig> settings)
+        IReadOnlyDictionary<string, QuoteProviderConfig> settings,
+        IReadOnlyList<IQuoteProvider>? extraProviders)
     {
         List<(IQuoteProvider Provider, QuoteProviderConfig Config)> candidates = [];
         lock (_providerSettingsSync)
         {
-            foreach (IQuoteProvider provider in _providers)
+            foreach (IQuoteProvider provider in _providers.Concat(extraProviders ?? []))
             {
                 QuoteProviderConfig config = settings.TryGetValue(provider.Id, out QuoteProviderConfig? existing)
                     && existing is not null
@@ -238,6 +239,7 @@ public sealed class QuoteSourceService
         {
             IsEnabled = provider.IsEnabledByDefault,
             Weight = provider.DefaultWeight,
+            IsAiReviewEnabled = provider.IsAiReviewEnabledByDefault,
             Options = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         };
     }
@@ -248,6 +250,7 @@ public sealed class QuoteSourceService
         {
             IsEnabled = source.IsEnabled,
             Weight = source.Weight,
+            IsAiReviewEnabled = source.IsAiReviewEnabled,
             Options = new Dictionary<string, string>(
                 source.Options ?? new Dictionary<string, string>(),
                 StringComparer.OrdinalIgnoreCase)

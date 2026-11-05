@@ -1,7 +1,7 @@
 ﻿using System.ComponentModel;
 using System.Runtime.CompilerServices;
 
-namespace Motivation.Core;
+namespace IslandQuotes.Core;
 
 /// <summary>Small MVVM base used to keep the plugin free of extra MVVM dependencies.</summary>
 public abstract class ObservableObject : INotifyPropertyChanged

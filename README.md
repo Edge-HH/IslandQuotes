@@ -1,11 +1,11 @@
-# Motivation · AI 每日一言
+# IslandQuotes
 
-Motivation 是一个面向 **ClassIsland v2** 的独立插件。它在「每日一言」真正显示到班级大屏之前，先调用所选的 AI 供应商做内容风险审查；只有低风险内容自动通过，中风险内容进入人工复核，高风险内容自动拦截。
+IslandQuotes 是一个面向 **ClassIsland v2** 的独立插件。它在「每日一言」真正显示到班级大屏之前，先调用所选的 AI 供应商做内容风险审查；只有低风险内容自动通过，中风险内容进入人工复核，高风险内容自动拦截。
 
-> 插件 ID：`ink.motivation.quoteai`  
-> 入口程序集：`Motivation.dll`  
-> 当前清单版本：`1.0.0.0`，ClassIsland API `2.0.0.0`  
-> 目标框架：`.NET 10` / `net10.0-windows`  
+> 插件 ID：`ink.islandquotes.quoteai`  
+> 入口程序集：`IslandQuotes.dll`  
+> 当前清单版本：`1.0.0.0`，ClassIsland API `2.0.0.0`（以 ClassIsland.PluginSdk `2.1.0.1` 构建，兼容 2.1.0.1 及以上宿主）  
+> 目标框架：`.NET 8` / `net8.0-windows`  
 > 当前状态：功能与验收结果见 [docs/TEST_REPORT.md](docs/TEST_REPORT.md)（测试报告只记录实际执行结果）。
 
 ## 来源与重构说明
@@ -21,15 +21,16 @@ Motivation 是一个面向 **ClassIsland v2** 的独立插件。它在「每日�
 
 | 能力 | 行为 |
 | --- | --- |
-| 预展示 AI 审查 | 第三方名句进入组件显示之前先审查；不会先把未审查内容显示出来。 |
+| 可选的预展示 AI 审查 | 在组件设置的每个内容来源中可单独开关「对该来源启用 AI 审查」（内置来源默认开启，自定义来源默认关闭）。开启后该来源的内容进入组件显示之前先审查，不会先把未审查内容显示出来；关闭后只应用本地排除词，其余直接播放（审计决策 `review_disabled`）。 |
 | 低风险自动通过 | `RiskLevel.Low` → 自动加入播放队列，按批准顺序播放。 |
 | 中风险统一人工复核 | `RiskLevel.Medium` → 进入「人工复核与播放队列」页面，必须由人工批准后才可播放。 |
 | 高风险自动拦截 | `RiskLevel.High` → 直接进入拦截历史，不进入人工可批准队列，正文与署名在复核页隐藏。 |
 | AI 失败时关闭（fail-closed） | 超时、限流、无效 JSON、未知风险等都不会自动放行。默认「转人工复核」，也可设为「直接拦截」。 |
-| 批量抓取与并发审查 | 播放队列为空时按 `BatchSize` 抓取一批候选，并按最大并发数审查。 |
+| 批量抓取与并发审查 | 播放队列为空时抓取一批候选（默认 3 条，缓冲上限 12 条），并按最大并发数审查。 |
+| 自定义来源 | 点击「内容来源」标题右侧的添加按钮新增自定义来源：每行一条内容，可选顺序播放（记忆上次播放位置）或随机播放，也可从本地 txt 导入。 |
 | FIFO 播放队列 | 低风险自动通过和中风险人工批准都追加到队尾；显示时从队首取出，保证先进先出。 |
 | 本地忽略词 | 命中组件设置中的忽略词时直接按高风险拦截并记录 `local_ignore`，即使 AI 返回低风险也不放行。 |
-| 多供应商预设 | 支持公用免费、免费额度、付费、本地和自定义类别，覆盖 OpenAI/Anthropic/Gemini 三类协议。 |
+| 多供应商预设 | 默认「OpenAI 兼容」，另含主流官方供应商与本地 Ollama 预设，覆盖 OpenAI/Anthropic/Gemini 三类协议。 |
 | 审计日志 | 每日 UTF-8 JSONL，记录请求、审查、决策、人工复核、播放和队列恢复事件。 |
 | 状态持久化 | 待复核、已批准队列与历史写入 `review-queue.json`；重启后不把未审查内容当低风险播放。 |
 
@@ -57,8 +58,8 @@ Motivation 是一个面向 **ClassIsland v2** 的独立插件。它在「每日�
 ### 环境要求
 
 - Windows 10/11
-- ClassIsland v2（插件 API `2.0.0.0` 及以上）
-- .NET SDK **10 或更新版本**
+- ClassIsland v2 **2.1.0.1 或更新版本**（插件 API `2.0.0.0`）
+- .NET SDK **8 或更新版本**（插件目标为 `net8.0-windows`，与 ClassIsland 2.1.0.1 宿主运行时一致）
 - 首次还原 NuGet 包时需要访问 NuGet 源（或预先配置好可用的离线源）
 
 本仓库的构建脚本优先使用仓库内 SDK：`.tools\dotnet\dotnet.exe`；不存在时才使用 `PATH` 中的 `dotnet`。
@@ -68,13 +69,13 @@ Motivation 是一个面向 **ClassIsland v2** 的独立插件。它在「每日�
 在仓库根目录执行：
 
 ```powershell
-dotnet build Motivation.csproj -c Release -p:CreateCipx=true
+dotnet build IslandQuotes.csproj -c Release -p:CreateCipx=true
 ```
 
 本工作区已安装本地 SDK 时，也可直接执行：
 
 ```powershell
-.\.tools\dotnet\dotnet.exe build Motivation.csproj -c Release -p:CreateCipx=true
+.\.tools\dotnet\dotnet.exe build IslandQuotes.csproj -c Release -p:CreateCipx=true
 ```
 
 > 如果 CIPX 打包阶段提示找不到 `pwsh`（只安装了 Windows PowerShell 5.1 的环境），可在命令后追加 `-p:PowershellBinaryName=powershell.exe`。`scripts/build.ps1 -CreateCipx` 会自动检测并处理该情况。
@@ -90,49 +91,47 @@ dotnet build Motivation.csproj -c Release -p:CreateCipx=true
 
 | 产物 | 路径 |
 | --- | --- |
-| 插件程序集 | `bin\Release\net10.0-windows\Motivation.dll` |
-| 清单 | `bin\Release\net10.0-windows\manifest.yml` |
-| 图标 | `bin\Release\net10.0-windows\icon.png` |
-| ClassIsland 插件包 | `cipx\Motivation.cipx` |
+| 插件程序集 | `bin\Release\net8.0-windows\IslandQuotes.dll` |
+| 清单 | `bin\Release\net8.0-windows\manifest.yml` |
+| 图标 | `bin\Release\net8.0-windows\icon.png` |
+| ClassIsland 插件包 | `cipx\IslandQuotes.cipx` |
 
-`Motivation.cipx` 由 `ClassIsland.PluginSdk` 的 `CreateCipx` 目标打包 `bin\Release\net10.0-windows\` 生成。安装时使用 ClassIsland v2 的插件管理界面选择生成的 `.cipx` 文件；具体导入入口以宿主版本界面为准。
+`IslandQuotes.cipx` 由 `ClassIsland.PluginSdk` 的 `CreateCipx` 目标打包 `bin\Release\net8.0-windows\` 生成。安装时使用 ClassIsland v2 的插件管理界面选择生成的 `.cipx` 文件；具体导入入口以宿主版本界面为准。
 
 ## 首次运行配置
 
-1. 在 ClassIsland 中把 **AI 每日一言** 组件加入需要的组件配置/主界面配置。
-2. 打开 ClassIsland 的插件设置，进入 **Motivation** 设置组。
-3. 打开 **AI 审查与供应商** 页面。
-4. 在供应商预设中选择一个配置。默认启用的是 **Pollinations 公共免费**，无需 API Key。
-5. 如预设要求密钥，在 **API Key（密码掩码）** 中填写；也可填写 `env:环境变量名`，例如 `env:OPENAI_API_KEY`，避免把密钥直接写进 `settings.json`。
+1. 在 ClassIsland 中把 **GoodQuotes** 组件加入需要的组件配置/主界面配置。
+2. 打开 ClassIsland 的插件设置，进入 **IslandQuotes** 设置组。
+3. 打开 **AI审查设置** 页面。
+4. 在供应商预设中选择一个配置。默认启用的是 **OpenAI 兼容**，需要自行填写 Base URL、模型与 API Key；也可以改选内置的官方供应商预设。
+5. 如预设要求密钥，在 **API Key** 中填写；也可填写 `env:环境变量名`，例如 `env:OPENAI_API_KEY`，避免把密钥直接写进 `settings.json`。
 6. 检查 Base URL、协议、模型和请求超时。内置预设通常已填好，只有自定义网关/Ollama 等场景才需要改动。
 7. 点击 **保存设置**，再点击 **测试连接**。测试会发送一条无害的内置引用到当前供应商。
-8. 回到组件设置，选择名句来源、刷新间隔、每批数量、缓冲上限和忽略词。
+8. 回到组件设置，选择名句来源（以及各来源是否启用 AI 审查）、刷新间隔和排除列表。
 
 ### 内置供应商预设
 
-| 类别 | 预设 | 默认协议 | 密钥 |
-| --- | --- | --- | --- |
-| 公用免费 | Pollinations 公共免费（`openai` 模型） | OpenAI Chat Completions | 不需要 |
-| 免费额度 | 智谱 GLM、SiliconFlow、OpenRouter 免费模型、Groq、Google Gemini | OpenAI 兼容 / Gemini 原生 | 通常需要 |
-| 付费 | OpenAI、DeepSeek、Moonshot（月之暗面）、DashScope / 通义千问、Together AI、Anthropic Claude | OpenAI 兼容 / Anthropic 原生 | 需要 |
-| 本地 | Ollama 本地模型（默认 `qwen2.5:7b`，`http://127.0.0.1:11434/v1`） | OpenAI 兼容 | 默认不需要 |
-| 自定义 | 自定义 OpenAI 兼容端点 | OpenAI 兼容 | 按服务要求 |
+| 预设 | 默认协议 | 密钥 |
+| --- | --- | --- |
+| OpenAI 兼容（默认，需自行填写地址与模型） | OpenAI 兼容 | 按服务要求 |
+| OpenAI、DeepSeek、Moonshot（月之暗面）、Xiaomi MiMo、DashScope / 通义千问、智谱 GLM、SiliconFlow、Groq、Together AI | OpenAI 兼容 | 需要 |
+| Google Gemini | Gemini 原生 | 需要 |
+| Anthropic Claude | Anthropic 原生 | 需要 |
+| Ollama 本地模型（默认 `qwen2.5:7b`，`http://127.0.0.1:11434/v1`） | OpenAI 兼容 | 默认不需要 |
 
-「免费额度」与「免费模型」的可用性、限速和计费规则由各平台随时调整，内置模型名不代表永久免费。请以供应商控制台为准。
+模型可用性、限速与价格以各供应商控制台为准。待审文本会发送给所选供应商，请先阅读其隐私政策；在意隐私时请选择本地模型或自建/可信供应商。
 
-> **Pollinations 隐私提醒：** 默认公用匿名端点无需密钥，但第三方可能记录、复用或限流发送给它的文本，且服务可能不可用。不要把敏感内容、学生隐私信息或密钥发给公共端点；在意隐私时请选择本地模型或自建/可信供应商。
 ## 组件设置
 
-「AI 每日一言」组件设置中可配置：
+「GoodQuotes」组件设置中可配置：
 
-- 名句来源的启用状态与权重；权重为 0 等同于不参与选择。
+- 名句来源的启用状态、权重与「对该来源启用 AI 审查」；权重为 0 等同于不参与选择。
+- 自定义来源：点击「内容来源」标题右侧的添加按钮新增，可编辑名称和内容（每行一条）、选择顺序/随机播放、从本地 txt 导入或删除。
 - 默认启用的来源为「今日诗词」和「诏预」，另外提供「一言」和「每日一句」预设。
 - 刷新间隔（秒）；设为 `0` 表示关闭自动刷新，不等于立即显示。
 - 字数限制；按来源能力用于过滤过长内容。
-- 每批抓取数量（1–10）与最大缓冲条目数（1–100）。
 - 作者、出处、动画和额外信息展示方式。
-- 本地忽略词（每行一个）；命中后直接拦截。
-- 打开审计日志目录的按钮。
+- 排除列表（每行一个）；命中后直接拦截。
 
 AI 供应商、API Key、审查失败策略等是插件级全局设置，不保存在每个组件的独立配置中。
 
@@ -153,7 +152,7 @@ AI 供应商、API Key、审查失败策略等是插件级全局设置，不保�
 
 ### 批量抓取与缓冲
 
-播放队列为空时，组件会按设置的批次大小抓取候选，并同时调用 AI；实际并发数受「最大并发审查数」限制。待复核数与播放队列数之和达到「最大缓冲条目数」后，组件暂停继续抓取，直到人工处理或播放腾出空间。
+播放队列为空时，组件会按固定批次大小（3 条）抓取候选，并同时调用 AI；实际并发数受「最大并发审查数」限制。待复核数与播放队列数之和达到缓冲上限（12 条）后，组件暂停继续抓取，直到人工处理或播放腾出空间。
 
 ## 审计日志
 
@@ -199,9 +198,9 @@ AI 供应商、API Key、审查失败策略等是插件级全局设置，不保�
 
 插件要求严格 JSON；模型若输出 Markdown、解释文字或缺少 `risk/confidence/categories/reason`，会被视为审查失败。可尝试更换模型，或让自定义系统提示词只补充审查标准，不要移除 JSON 约束。失败内容默认进入人工复核。
 
-### Pollinations 公共端点不可用/429
+### 供应商返回 401/429
 
-公共匿名端点可能出现限流、额度限制、临时故障或地区网络问题。稍后重试，或切换到其他供应商；不要把公共端点的可用性当作生产保障。
+401 通常是 API Key 错误或未填写；429 表示限流或额度不足。检查密钥与控制台配额，稍后重试或切换到其他供应商。
 
 ### 使用 Ollama 本地模型
 
@@ -221,11 +220,11 @@ AI 供应商、API Key、审查失败策略等是插件级全局设置，不保�
 # 构建并生成 CIPX，再执行静态验收、构建和包内容检查
 .\scripts\verify.ps1
 
-# 可选：匿名的 Pollinations 连通性诊断（不属于常规构建）
-.\scripts\test-public-ai.ps1
+# 可选：OpenAI 兼容端点连通性诊断（不属于常规构建），API Key 取自 OPENAI_API_KEY
+.\scripts\test-public-ai.ps1 -Endpoint https://api.openai.com/v1/chat/completions -Model gpt-4o-mini
 ```
 
-公共端点测试只用于诊断，失败不会影响本地构建。实际执行过的命令、时间、产物和失败信息记录在 [docs/TEST_REPORT.md](docs/TEST_REPORT.md)。
+连通性测试只用于诊断，失败不会影响本地构建。实际执行过的命令、时间、产物和失败信息记录在 [docs/TEST_REPORT.md](docs/TEST_REPORT.md)。
 
 ## 更多文档
 
@@ -237,4 +236,4 @@ AI 供应商、API Key、审查失败策略等是插件级全局设置，不保�
 
 本项目以 **GNU Affero General Public License v3.0（AGPL-3.0）** 分发，完整文本见 [`LICENSE.txt`](LICENSE.txt)，并会随插件输出和 CIPX 包一起分发。名句文本、AI 模型输出及各供应商服务受对应第三方条款约束；本插件不对第三方内容的准确性、合法性或持续可用性作担保。
 
-This project is distributed under the **GNU Affero General Public License v3.0**; the full text is in [`LICENSE.txt`](LICENSE.txt). The extracted and refactored quote-component/provider portions are derived from ExtraIsland by LiPolymer, which is also licensed under AGPLv3. Original Motivation UI/service code and icon are provided under the same license. Quote texts, AI model outputs and third-party API services remain subject to their own terms.
+This project is distributed under the **GNU Affero General Public License v3.0**; the full text is in [`LICENSE.txt`](LICENSE.txt). The extracted and refactored quote-component/provider portions are derived from ExtraIsland by LiPolymer, which is also licensed under AGPLv3. Original IslandQuotes UI/service code and icon are provided under the same license. Quote texts, AI model outputs and third-party API services remain subject to their own terms.

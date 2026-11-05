@@ -1,17 +1,26 @@
 ﻿using System.Collections.ObjectModel;
-using System.Diagnostics;
 using System.IO;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.Platform.Storage;
+using ClassIsland.Core;
 using ClassIsland.Core.Abstractions.Controls;
-using Motivation.Core;
-using Motivation.ViewModels;
+using ClassIsland.Core.Helpers.UI;
+using ClassIsland.Platforms.Abstraction;
+using IslandQuotes.Core;
+using IslandQuotes.Models;
+using IslandQuotes.Services;
+using IslandQuotes.ViewModels;
 
-namespace Motivation.Components.QuoteAi;
+namespace IslandQuotes.Components.QuoteAi;
 
 public partial class QuoteAiSettings : ComponentBase<QuoteAiConfig>
 {
+    const long MaxImportFileSizeBytes = 1024 * 1024;
+    const int MaxImportEntries = 5000;
+    const int MaxEntryLength = 200;
+
     public QuoteAiSettings()
     {
         InitializeComponent();
@@ -24,40 +33,157 @@ public partial class QuoteAiSettings : ComponentBase<QuoteAiConfig>
         RefreshProviderItems();
     }
 
-    void RefreshProviderItems()
+    void RefreshProviderItems(CustomQuoteSource? expandedSource = null)
     {
+        foreach (QuoteProviderSettingsItem item in ProviderItems) item.Detach();
         ProviderItems.Clear();
+
+        List<IQuoteProvider> providers = [];
         try
         {
-            var providers = PluginRuntime.QuoteSources.Providers;
+            providers.AddRange(PluginRuntime.QuoteSources.Providers);
             Settings.EnsureProviderSettings(providers);
-            foreach (var provider in providers)
-            {
-                if (Settings.ProviderSettings.TryGetValue(provider.Id, out var configuration))
-                    ProviderItems.Add(new QuoteProviderSettingsItem(provider, configuration));
-            }
-            RuntimeStatusText.Text = ProviderItems.Count == 0
-                ? "没有可用的第三方来源。请检查插件是否已正确初始化。"
-                : "审计日志记录审查、拦截与播放事件。AI 失败时默认保持隐藏。";
         }
         catch
         {
-            RuntimeStatusText.Text = "来源服务尚未就绪。请先启用插件并在插件设置中完成配置。";
+            ShowStatus("来源服务尚未就绪。请先启用插件并在插件设置中完成配置。");
+        }
+
+        foreach (IQuoteProvider provider in providers)
+        {
+            if (Settings.ProviderSettings.TryGetValue(provider.Id, out var configuration))
+                ProviderItems.Add(new QuoteProviderSettingsItem(provider, configuration));
+        }
+
+        IReadOnlyList<IQuoteProvider> customProviders = Settings.CreateCustomProviders();
+        for (int i = 0; i < customProviders.Count; i++)
+        {
+            IQuoteProvider provider = customProviders[i];
+            CustomQuoteSource source = Settings.CustomSources[i];
+            if (!Settings.ProviderSettings.TryGetValue(provider.Id, out var configuration)) continue;
+            ProviderItems.Add(new QuoteProviderSettingsItem(provider, configuration, source)
+            {
+                IsExpanded = ReferenceEquals(source, expandedSource)
+            });
         }
     }
 
-    void OpenLogDirectoryButton_OnClick(object? sender, RoutedEventArgs e)
+    void ShowStatus(string message)
+    {
+        StatusText.Text = message;
+        StatusText.IsVisible = !string.IsNullOrWhiteSpace(message);
+    }
+
+    void AddCustomSourceButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        CustomQuoteSource source = Settings.AddCustomSource();
+        RefreshProviderItems(source);
+    }
+
+    void RemoveCustomSourceButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if ((sender as Control)?.Tag is not QuoteProviderSettingsItem { CustomSource: { } source }) return;
+        Settings.RemoveCustomSource(source);
+        RefreshProviderItems();
+    }
+
+    async void ImportCustomSourceButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if ((sender as Control)?.Tag is not QuoteProviderSettingsItem { CustomSource: { } source }) return;
+
+        string? path = await PickTextFileAsync("导入自定义内容");
+        if (path is null) return;
+
+        try
+        {
+            if (new FileInfo(path).Length > MaxImportFileSizeBytes)
+            {
+                ShowStatus($"导入失败：文件大小超过 {MaxImportFileSizeBytes / 1024} KB 限制");
+                return;
+            }
+
+            List<string> entries = source.GetEntries().ToList();
+            int before = entries.Count;
+            foreach (string line in await File.ReadAllLinesAsync(path))
+            {
+                string entry = line.Trim();
+                if (entry.Length > 0) entries.Add(entry);
+            }
+
+            if (entries.Count > MaxImportEntries)
+            {
+                ShowStatus($"导入失败：自定义内容条目数超过 {MaxImportEntries} 条限制");
+                return;
+            }
+
+            source.Content = string.Join("\r\n", entries);
+            ShowStatus($"已向「{source.Name}」导入 {entries.Count - before} 条内容。");
+        }
+        catch (Exception exception)
+        {
+            ShowStatus("导入失败：无法读取该文件。");
+            Console.WriteLine(exception);
+        }
+    }
+
+    async Task<string?> PickTextFileAsync(string title)
     {
         try
         {
-            string directory = PluginRuntime.AuditLog.LogDirectory;
-            Directory.CreateDirectory(directory);
-            Process.Start(new ProcessStartInfo(directory) { UseShellExecute = true });
-            RuntimeStatusText.Text = $"已请求打开日志目录：{directory}";
+            PopupHelper.DisableAllPopups();
+            List<string> files = await PlatformServices.FilePickerService.OpenFilesPickerAsync(new FilePickerOpenOptions
+            {
+                Title = title,
+                FileTypeFilter = [FilePickerFileTypes.TextPlain]
+            }, TopLevel.GetTopLevel(this) ?? AppBase.Current.GetRootWindow());
+            return files.Count == 0 ? null : files[0];
         }
-        catch
+        catch (Exception exception)
         {
-            RuntimeStatusText.Text = "无法打开日志目录。请检查插件是否已初始化，或稍后重试。";
+            Console.WriteLine(exception);
+            return null;
+        }
+        finally
+        {
+            PopupHelper.RestoreAllPopups();
+        }
+    }
+
+    async void ImportIgnoreListButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        string? path = await PickTextFileAsync("导入排除列表");
+        if (path is null) return;
+
+        try
+        {
+            if (new FileInfo(path).Length > MaxImportFileSizeBytes)
+            {
+                ShowStatus($"导入失败：文件大小超过 {MaxImportFileSizeBytes / 1024} KB 限制");
+                return;
+            }
+
+            List<string> entries = Settings.IgnoreListString
+                .Split(["\r\n", "\n"], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .ToList();
+            foreach (string line in await File.ReadAllLinesAsync(path))
+            {
+                string entry = line.Trim();
+                if (entry.Length == 0) continue;
+                if (entry.Length > MaxEntryLength) entry = entry[..MaxEntryLength];
+                if (!entries.Contains(entry)) entries.Add(entry);
+            }
+
+            if (entries.Count > MaxImportEntries)
+            {
+                ShowStatus($"导入失败：排除列表条目数超过 {MaxImportEntries} 条限制");
+                return;
+            }
+
+            Settings.IgnoreListString = string.Join("\r\n", entries);
+        }
+        catch (Exception exception)
+        {
+            Console.WriteLine(exception);
         }
     }
 }

@@ -11,8 +11,8 @@ Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
 $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-$projectPath = Join-Path $repoRoot 'Motivation.csproj'
-$targetFramework = 'net10.0-windows'
+$projectPath = Join-Path $repoRoot 'IslandQuotes.csproj'
+$targetFramework = 'net8.0-windows'
 
 function Fail([string]$Message) {
     Write-Host ''
@@ -44,14 +44,14 @@ function Get-DotnetExecutable {
     return $command.Source
 }
 
-Write-Host 'Motivation build helper' -ForegroundColor Cyan
+Write-Host 'IslandQuotes build helper' -ForegroundColor Cyan
 Write-Host "Repository : $repoRoot"
 Write-Host "Project    : $projectPath"
 Write-Host "Config     : $Configuration"
 Write-Host "CIPX       : $([bool]$CreateCipx)"
 
 if (-not (Test-Path -LiteralPath $projectPath -PathType Leaf)) {
-    Fail "Motivation.csproj was not found at '$projectPath'."
+    Fail "IslandQuotes.csproj was not found at '$projectPath'."
 }
 
 $dotnet = Get-DotnetExecutable -ExplicitPath $DotnetPath -Root $repoRoot
@@ -133,10 +133,10 @@ finally {
 }
 
 $binDir = Join-Path $repoRoot "bin\$Configuration\$targetFramework"
-$assemblyPath = Join-Path $binDir 'Motivation.dll'
+$assemblyPath = Join-Path $binDir 'IslandQuotes.dll'
 $manifestPath = Join-Path $binDir 'manifest.yml'
 $iconPath = Join-Path $binDir 'icon.png'
-$cipxPath = Join-Path $repoRoot 'cipx\Motivation.cipx'
+$cipxPath = Join-Path $repoRoot 'cipx\IslandQuotes.cipx'
 
 Write-Host ''
 Write-Host 'Build outputs:' -ForegroundColor Green

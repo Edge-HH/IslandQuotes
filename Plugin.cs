@@ -2,17 +2,17 @@ using ClassIsland.Core;
 using ClassIsland.Core.Abstractions;
 using ClassIsland.Core.Attributes;
 using ClassIsland.Core.Extensions.Registry;
-using Motivation.Components.QuoteAi;
-using Motivation.Core;
-using Motivation.Services;
-using Motivation.SettingsPages;
+using IslandQuotes.Components.QuoteAi;
+using IslandQuotes.Core;
+using IslandQuotes.Services;
+using IslandQuotes.SettingsPages;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
-namespace Motivation;
+namespace IslandQuotes;
 
 /// <summary>
-/// Motivation · AI 每日一言 plugin entrance.
+/// IslandQuotes · AI 每日一言 plugin entrance.
 /// </summary>
 [PluginEntrance]
 public sealed class Plugin : PluginBase
@@ -23,9 +23,9 @@ public sealed class Plugin : PluginBase
             throw new InvalidOperationException("ClassIsland did not provide a plugin config folder.");
 
         PluginRuntime.Initialize(PluginConfigFolder);
-        Console.WriteLine($"[Motivation] config: {PluginRuntime.ConfigDirectory}");
-        Console.WriteLine($"[Motivation] AI provider: {PluginRuntime.SettingsStore.GetActiveProfile()?.DisplayLabel ?? "not configured"}");
-        Console.WriteLine($"[Motivation] audit log: {PluginRuntime.AuditLog.LogDirectory}");
+        Console.WriteLine($"[IslandQuotes] config: {PluginRuntime.ConfigDirectory}");
+        Console.WriteLine($"[IslandQuotes] AI provider: {PluginRuntime.SettingsStore.GetActiveProfile()?.DisplayLabel ?? "not configured"}");
+        Console.WriteLine($"[IslandQuotes] audit log: {PluginRuntime.AuditLog.LogDirectory}");
 
         services.AddSingleton(PluginRuntime.SettingsStore);
         services.AddSingleton(PluginRuntime.AuditLog);
@@ -35,7 +35,7 @@ public sealed class Plugin : PluginBase
 
         services.AddComponent<QuoteAiComponent, QuoteAiSettings>();
 
-        services.AddSettingsPageGroup("motivation", "\uE9D9", "Motivation · AI 每日一言")
+        services.AddSettingsPageGroup("islandquotes", "\uE21D", "IslandQuotes")
             .AddSettingsPage<AiSettingsPage>()
             .AddSettingsPage<ReviewQueuePage>();
 
@@ -47,7 +47,7 @@ public sealed class Plugin : PluginBase
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"[Motivation] shutdown failed: {ex.Message}");
+                Console.Error.WriteLine($"[IslandQuotes] shutdown failed: {ex.Message}");
             }
         };
     }

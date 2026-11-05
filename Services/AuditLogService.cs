@@ -4,9 +4,9 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
-using Motivation.Core;
+using IslandQuotes.Core;
 
-namespace Motivation.Services;
+namespace IslandQuotes.Services;
 
 /// <summary>按日期写入线程安全的 UTF-8 JSONL 审计日志，并自动脱敏敏感字段。</summary>
 public sealed class AuditLogService

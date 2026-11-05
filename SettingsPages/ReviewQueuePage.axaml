@@ -1,4 +1,4 @@
-﻿<ci:SettingsPageBase x:Class="Motivation.SettingsPages.ReviewQueuePage"
+﻿<ci:SettingsPageBase x:Class="IslandQuotes.SettingsPages.ReviewQueuePage"
                      xmlns="https://github.com/avaloniaui"
                      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                      xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
@@ -10,11 +10,7 @@
     <ScrollViewer>
         <StackPanel Classes="settings-container animated-intro" Spacing="12">
             <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
-                <StackPanel Spacing="2">
-                    <TextBlock Text="人工复核与播放队列" FontSize="26" FontWeight="Bold"/>
-                    <TextBlock Text="中风险内容必须逐条或批量批准后才会进入 FIFO 播放队列；高风险内容与已拦截记录不会显示正文。"
-                               TextWrapping="Wrap" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
-                </StackPanel>
+                <TextBlock Text="人工复核与播放队列" FontSize="26" FontWeight="Bold" VerticalAlignment="Center"/>
                 <Button Grid.Column="1" Content="刷新队列" Click="RefreshButton_OnClick" VerticalAlignment="Center"/>
                 <Button Grid.Column="2" Content="打开审计日志目录" Click="OpenLogDirectoryButton_OnClick" VerticalAlignment="Center"/>
             </Grid>
@@ -54,9 +50,6 @@
                         <Button Content="全部批准" Click="ApproveAllButton_OnClick" IsEnabled="{Binding IsAvailable}"/>
                         <Button Content="全部拒绝" Click="RejectAllButton_OnClick" IsEnabled="{Binding IsAvailable}"/>
                     </StackPanel>
-                    <TextBlock Text="勾选左侧复选框可选择多项。批准后按操作顺序加入播放队列。"
-                               FontSize="12" TextWrapping="Wrap"
-                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
                     <ItemsControl ItemsSource="{Binding PendingManualReview}" IsVisible="{Binding HasPending}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
@@ -99,10 +92,7 @@
             </Border>
             <Border BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="4" Padding="12">
                 <StackPanel Spacing="8">
-                    <TextBlock Text="已批准的 FIFO 播放队列" FontSize="19" FontWeight="SemiBold"/>
-                    <TextBlock Text="队列按批准顺序播放；此处只包含低风险自动通过或人工批准的中风险内容。"
-                               FontSize="12" TextWrapping="Wrap"
-                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                    <TextBlock Text="播放队列" FontSize="19" FontWeight="SemiBold"/>
                     <ItemsControl ItemsSource="{Binding PlaybackQueue}" IsVisible="{Binding HasPlayback}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
@@ -134,9 +124,6 @@
             <Border BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="4" Padding="12">
                 <StackPanel Spacing="8">
                     <TextBlock Text="最近审查历史" FontSize="19" FontWeight="SemiBold"/>
-                    <TextBlock Text="高风险和已拦截条目的正文、署名会统一显示为隐藏提示；供应商、上游 ID、风险原因与时间仍可用于审计。"
-                               FontSize="12" TextWrapping="Wrap"
-                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
                     <ItemsControl ItemsSource="{Binding History}" IsVisible="{Binding HasHistory}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
@@ -163,6 +150,14 @@
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
+                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8" IsVisible="{Binding HasMultipleHistoryPages}">
+                        <Button Content="上一页" Click="PreviousHistoryPageButton_OnClick"
+                                IsEnabled="{Binding CanGoToPreviousHistoryPage}"/>
+                        <TextBlock Grid.Column="1" Text="{Binding HistoryPageLabel}" HorizontalAlignment="Center"
+                                   VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                        <Button Grid.Column="2" Content="下一页" Click="NextHistoryPageButton_OnClick"
+                                IsEnabled="{Binding CanGoToNextHistoryPage}"/>
+                    </Grid>
                 </StackPanel>
             </Border>
         </StackPanel>

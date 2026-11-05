@@ -1,12 +1,15 @@
-﻿using Motivation.Models;
+﻿using IslandQuotes.Models;
 
-namespace Motivation.Services;
+namespace IslandQuotes.Services;
 
 /// <summary>内置 AI 供应商预设目录。</summary>
 public static class AiProviderPresetCatalog
 {
-    /// <summary>默认启用的匿名公共供应商 ID。</summary>
-    public const string DefaultProfileId = "pollinations-openai";
+    /// <summary>默认启用的供应商 ID：通用 OpenAI 兼容端点，由用户填写地址与密钥。</summary>
+    public const string DefaultProfileId = "custom-openai-compatible";
+
+    /// <summary>已下线的内置预设；旧设置文件中的这些条目会在加载时移除。</summary>
+    public static readonly IReadOnlyList<string> RetiredPresetIds = ["pollinations-openai", "openrouter-free"];
 
     /// <summary>未经用户覆盖时使用的抗提示词注入审查提示。</summary>
     public const string DefaultSystemPrompt = """
@@ -51,144 +54,121 @@ public static class AiProviderPresetCatalog
         [
             Create(
                 DefaultProfileId,
-                "Pollinations 公共免费",
-                "匿名公共 OpenAI 兼容端点；无需 API Key，适合快速体验。",
+                "OpenAI 兼容",
+                "任意兼容 Chat Completions 的服务或自建网关。",
                 AiProtocol.OpenAiCompatible,
-                AiProviderCategory.PublicFree,
-                "https://text.pollinations.ai/openai",
-                "openai",
-                requiresApiKey: false,
-                notes: "公共匿名端点可能记录请求、限制频率或用于服务改进，请勿发送敏感内容。建议正式使用时改用自己信任的供应商。"),
+                string.Empty,
+                string.Empty,
+                requiresApiKey: true,
+                notes: "请填写 Base URL、模型名称，以及服务要求的 API Key 或额外请求头。"),
             Create(
                 "openai",
                 "OpenAI",
                 "OpenAI 官方 Chat Completions 接口。",
                 AiProtocol.OpenAiCompatible,
-                AiProviderCategory.Paid,
                 "https://api.openai.com/v1",
                 "gpt-4o-mini",
                 requiresApiKey: true,
-                notes: "按官方账户用量计费，请在插件设置中填写 API Key。"),
+                notes: "使用 OpenAI 平台 API Key。"),
             Create(
                 "deepseek",
                 "DeepSeek",
                 "DeepSeek 官方 OpenAI 兼容接口。",
                 AiProtocol.OpenAiCompatible,
-                AiProviderCategory.Paid,
                 "https://api.deepseek.com/v1",
                 "deepseek-chat",
                 requiresApiKey: true,
-                notes: "使用 DeepSeek 平台 API Key，费用与配额以平台说明为准。"),
+                notes: "使用 DeepSeek 平台 API Key。"),
             Create(
                 "moonshot",
                 "Moonshot（月之暗面）",
                 "Moonshot Chat Completions 接口。",
                 AiProtocol.OpenAiCompatible,
-                AiProviderCategory.Paid,
                 "https://api.moonshot.cn/v1",
                 "moonshot-v1-8k",
                 requiresApiKey: true,
                 notes: "使用 Moonshot 开放平台 API Key。"),
             Create(
+                "xiaomi-mimo",
+                "Xiaomi MiMo",
+                "小米 MiMo 开放平台 OpenAI 兼容接口。",
+                AiProtocol.OpenAiCompatible,
+                "https://api.xiaomimimo.com/v1",
+                "mimo-v2-flash",
+                requiresApiKey: true,
+                notes: "使用 Xiaomi MiMo 开放平台 API Key；可点击「获取可用模型」查看当前可用模型。"),
+            Create(
                 "dashscope-qwen",
                 "DashScope / 通义千问",
                 "阿里云百炼 OpenAI 兼容模式。",
                 AiProtocol.OpenAiCompatible,
-                AiProviderCategory.Paid,
                 "https://dashscope.aliyuncs.com/compatible-mode/v1",
                 "qwen-plus",
                 requiresApiKey: true,
-                notes: "使用阿里云百炼 DashScope API Key，计费方式请查看控制台。"),
+                notes: "使用阿里云百炼 DashScope API Key。"),
             Create(
                 "zhipu-glm",
                 "智谱 GLM",
                 "智谱开放平台 OpenAI 兼容接口。",
                 AiProtocol.OpenAiCompatible,
-                AiProviderCategory.FreeTier,
                 "https://open.bigmodel.cn/api/paas/v4",
                 "glm-4-flash",
                 requiresApiKey: true,
-                notes: "部分模型提供免费额度；额度、限速和计费规则以智谱开放平台为准。"),
+                notes: "使用智谱开放平台 API Key；限速规则以平台为准。"),
             Create(
                 "siliconflow",
                 "SiliconFlow（硅基流动）",
                 "SiliconFlow 的 OpenAI 兼容模型服务。",
                 AiProtocol.OpenAiCompatible,
-                AiProviderCategory.FreeTier,
                 "https://api.siliconflow.cn/v1",
                 "Qwen/Qwen2.5-7B-Instruct",
                 requiresApiKey: true,
-                notes: "平台可能提供部分免费模型或试用额度；请确认当前模型与配额。"),
-            Create(
-                "openrouter-free",
-                "OpenRouter 免费模型",
-                "OpenRouter 聚合服务中的标记为 free 的模型。",
-                AiProtocol.OpenAiCompatible,
-                AiProviderCategory.FreeTier,
-                "https://openrouter.ai/api/v1",
-                "meta-llama/llama-3.3-70b-instruct:free",
-                requiresApiKey: true,
-                notes: "免费模型可能有严格限速且随时调整；请在 OpenRouter 创建 API Key 并确认模型仍可用。"),
+                notes: "使用 SiliconFlow API Key；请确认所选模型当前可用。"),
             Create(
                 "groq",
                 "Groq",
                 "Groq 的高吞吐 OpenAI 兼容推理接口。",
                 AiProtocol.OpenAiCompatible,
-                AiProviderCategory.FreeTier,
                 "https://api.groq.com/openai/v1",
                 "llama-3.3-70b-versatile",
                 requiresApiKey: true,
-                notes: "通常提供免费试用额度，实际限额以 Groq 控制台为准。"),
+                notes: "使用 Groq 控制台创建的 API Key；限速以控制台为准。"),
             Create(
                 "together",
                 "Together AI",
                 "Together AI 的 OpenAI 兼容接口。",
                 AiProtocol.OpenAiCompatible,
-                AiProviderCategory.Paid,
                 "https://api.together.xyz/v1",
                 "meta-llama/Llama-3.3-70B-Instruct-Turbo",
                 requiresApiKey: true,
-                notes: "按 Together AI 账户用量计费；模型可用性以平台为准。"),
+                notes: "使用 Together AI API Key；模型可用性以平台为准。"),
             Create(
                 "google-gemini",
                 "Google Gemini",
                 "Gemini generateContent 原生协议。",
                 AiProtocol.GeminiGenerateContent,
-                AiProviderCategory.FreeTier,
                 "https://generativelanguage.googleapis.com/v1beta",
                 "gemini-2.0-flash",
                 requiresApiKey: true,
-                notes: "Google AI Studio API Key 通常含免费额度，超出后按官方规则计费。"),
+                notes: "使用 Google AI Studio API Key。"),
             Create(
                 "anthropic",
                 "Anthropic Claude",
                 "Anthropic Messages 原生协议。",
                 AiProtocol.AnthropicMessages,
-                AiProviderCategory.Paid,
                 "https://api.anthropic.com/v1",
                 "claude-3-5-haiku-latest",
                 requiresApiKey: true,
-                notes: "按 Anthropic 官方账户用量计费。"),
+                notes: "使用 Anthropic Console 创建的 API Key。"),
             Create(
                 "ollama-local",
                 "Ollama 本地模型",
                 "仅访问本机 Ollama 的 OpenAI 兼容端点。",
                 AiProtocol.OpenAiCompatible,
-                AiProviderCategory.Local,
                 "http://127.0.0.1:11434/v1",
                 "qwen2.5:7b",
                 requiresApiKey: false,
-                notes: "请先在本机运行 Ollama 并拉取对应模型；内容不会发送到公网，除非你修改了地址。"),
-            Create(
-                "custom-openai-compatible",
-                "自定义 OpenAI 兼容端点",
-                "用于自建网关或其他兼容 Chat Completions 的服务。",
-                AiProtocol.OpenAiCompatible,
-                AiProviderCategory.Custom,
-                string.Empty,
-                string.Empty,
-                requiresApiKey: false,
-                notes: "请填写 Base URL、模型名称，以及服务要求的 API Key 或额外请求头。")
+                notes: "请先在本机运行 Ollama 并拉取对应模型；内容不会发送到公网，除非你修改了地址。")
         ];
     }
 
@@ -197,7 +177,6 @@ public static class AiProviderPresetCatalog
         string displayName,
         string description,
         AiProtocol protocol,
-        AiProviderCategory category,
         string baseUrl,
         string model,
         bool requiresApiKey,
@@ -210,7 +189,6 @@ public static class AiProviderPresetCatalog
             DisplayName = displayName,
             Description = description,
             Protocol = protocol,
-            Category = category,
             BaseUrl = baseUrl,
             Model = model,
             ApiKey = string.Empty,

@@ -1,6 +1,6 @@
-using Motivation.Models;
+using IslandQuotes.Models;
 
-namespace Motivation.Services;
+namespace IslandQuotes.Services;
 
 /// <summary>A quote source. Every implementation must populate Quote.UpstreamId.</summary>
 public interface IQuoteProvider
@@ -10,6 +10,7 @@ public interface IQuoteProvider
     string Description { get; }
     bool IsEnabledByDefault { get; }
     int DefaultWeight { get; }
+    bool IsAiReviewEnabledByDefault => true;
     Task<QuoteContent> FetchAsync(QuoteProviderConfig config, int lengthLimitation, CancellationToken cancellationToken = default);
 }
 

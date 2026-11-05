@@ -1,7 +1,7 @@
 ﻿using Avalonia.Controls;
 using Avalonia.Threading;
 
-namespace Motivation.Components.QuoteAi;
+namespace IslandQuotes.Components.QuoteAi;
 
 /// <summary>
 /// 轻量的内容切换器。没有依赖自定义 XAML 转换器；即使计时器在控件卸载后触发，

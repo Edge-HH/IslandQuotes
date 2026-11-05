@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFD978"/>
+      <stop offset="1" stop-color="#FFB547"/>
+    </linearGradient>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="5" stdDeviation="6" flood-color="#C9761A" flood-opacity="0.28"/>
+    </filter>
+    <!-- 单个左引号：圆球 + 向右上收的尾巴 -->
+    <path id="q" d="M-16 0 C-16 -22 -5 -34 9 -38 A4 4 0 0 1 12 -31 C4 -27 -1 -22 -2 -16 A16 16 0 1 1 -16 0 Z"/>
+  </defs>
+
+  <!-- 暖黄色大圆角矩形 -->
+  <rect x="12" y="12" width="232" height="232" rx="64" fill="url(#bg)"/>
+
+  <g transform="translate(0 6)">
+    <!-- 对话框：左边缘顺势收成左下角的小尾巴 -->
+    <path filter="url(#soft)" fill="#FFFBF2" stroke="#FFFBF2" stroke-width="6" stroke-linejoin="round"
+          d="M94 50 H162 A46 46 0 0 1 208 96 V132 A46 46 0 0 1 162 178 H104
+             C92 192 74 201 56 203 C62 195 65 186 64 178
+             C54 169 48 156 48 132 V96 A46 46 0 0 1 94 50 Z"/>
+
+    <!-- 框内单色图形 -->
+    <g fill="#F08A26" stroke="#F08A26" stroke-linecap="round" stroke-linejoin="round">
+      <!-- 粗的左双引号 “ -->
+      <use href="#q" transform="translate(79 123) scale(0.85)" stroke-width="4"/>
+      <use href="#q" transform="translate(114 123) scale(0.85)" stroke-width="4"/>
+
+      <!-- 节电模式风格的小树苗 -->
+      <g transform="translate(168 135) scale(0.85) translate(-174 -152)">
+        <path d="M174 152 V118" fill="none" stroke-width="9"/>
+        <path d="M174 132 C157 132 149 122 149 108 C164 108 174 117 174 132 Z" stroke-width="7"/>
+        <path d="M174 122 C174 104 184 93 200 93 C201 110 190 122 174 122 Z" stroke-width="7"/>
+      </g>
+    </g>
+  </g>
+</svg>

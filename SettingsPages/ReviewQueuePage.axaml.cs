@@ -3,14 +3,14 @@ using Avalonia.Controls;
 using Avalonia.Interactivity;
 using ClassIsland.Core.Abstractions.Controls;
 using ClassIsland.Core.Attributes;
-using Motivation.Models;
-using Motivation.ViewModels;
+using IslandQuotes.Models;
+using IslandQuotes.ViewModels;
 
-namespace Motivation.SettingsPages;
+namespace IslandQuotes.SettingsPages;
 
 [HidePageTitle]
-[Group("motivation")]
-[SettingsPageInfo("motivation.review-queue", "人工复核与播放队列", "\uE8FD", "\uE8FD")]
+[Group("islandquotes")]
+[SettingsPageInfo("islandquotes.review-queue", "人工复核与播放队列", "\uE8FD", "\uE8FD")]
 public partial class ReviewQueuePage : SettingsPageBase
 {
     readonly ReviewQueueViewModel _viewModel;
@@ -65,6 +65,16 @@ public partial class ReviewQueuePage : SettingsPageBase
     void RejectAllButton_OnClick(object? sender, RoutedEventArgs e)
     {
         _viewModel.RejectAll();
+    }
+
+    void PreviousHistoryPageButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        _viewModel.GoToPreviousHistoryPage();
+    }
+
+    void NextHistoryPageButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        _viewModel.GoToNextHistoryPage();
     }
 
     void OpenLogDirectoryButton_OnClick(object? sender, RoutedEventArgs e)

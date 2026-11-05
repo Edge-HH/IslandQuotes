@@ -1,7 +1,12 @@
 ﻿[CmdletBinding()]
 param(
-    [string]$Endpoint = 'https://text.pollinations.ai/openai',
-    [string]$Model = 'openai',
+    # OpenAI-compatible chat-completions URL, e.g. https://api.openai.com/v1/chat/completions
+    [Parameter(Mandatory = $true)]
+    [string]$Endpoint,
+    [Parameter(Mandatory = $true)]
+    [string]$Model,
+    # Defaults to the OPENAI_API_KEY environment variable; leave empty for keyless local endpoints.
+    [string]$ApiKey = $env:OPENAI_API_KEY,
     [int]$TimeoutSeconds = 45
 )
 
@@ -96,19 +101,24 @@ $payload = [ordered]@{
 }
 $jsonBody = $payload | ConvertTo-Json -Depth 8 -Compress
 
-Write-Host 'Public Pollinations connectivity test' -ForegroundColor Cyan
+Write-Host 'Live AI connectivity test (OpenAI-compatible)' -ForegroundColor Cyan
 Write-Host "Endpoint : $Endpoint"
 Write-Host "Model    : $Model"
-Write-Host 'Auth     : anonymous (no API key)'
+Write-Host ('Auth     : ' + $(if ([string]::IsNullOrWhiteSpace($ApiKey)) { 'none' } else { 'Bearer API key' }))
 Write-Host 'Request  : POST application/json (OpenAI chat-completions shape)'
 Write-Host ''
+
+$headers = @{ Accept = 'application/json' }
+if (-not [string]::IsNullOrWhiteSpace($ApiKey)) {
+    $headers['Authorization'] = "Bearer $ApiKey"
+}
 
 $statusCode = 0
 $responseBody = ''
 $transportError = ''
 try {
     $response = Invoke-WebRequest -Uri $Endpoint -Method Post -ContentType 'application/json; charset=utf-8' `
-        -Headers @{ Accept = 'application/json' } -UserAgent 'Motivation-Plugin-QA/1.0' `
+        -Headers $headers -UserAgent 'IslandQuotes-Plugin-QA/1.0' `
         -Body $jsonBody -TimeoutSec $TimeoutSeconds -UseBasicParsing
     $statusCode = Get-ResponseStatusCode $response
     $responseBody = [string]$response.Content

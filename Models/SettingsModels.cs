@@ -1,6 +1,6 @@
 ﻿using System.Text.Json.Serialization;
 
-namespace Motivation.Models;
+namespace IslandQuotes.Models;
 
 public enum RiskLevel
 {
@@ -33,15 +33,6 @@ public enum AiProtocol
     OpenAiCompatible = 0,
     AnthropicMessages = 1,
     GeminiGenerateContent = 2
-}
-
-public enum AiProviderCategory
-{
-    PublicFree = 0,
-    FreeTier = 1,
-    Paid = 2,
-    Local = 3,
-    Custom = 4
 }
 
 /// <summary>One quote returned by an upstream quote provider.</summary>
@@ -107,7 +98,6 @@ public sealed class AiProviderProfile
     public string DisplayName { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
     public AiProtocol Protocol { get; set; } = AiProtocol.OpenAiCompatible;
-    public AiProviderCategory Category { get; set; } = AiProviderCategory.Custom;
     public string BaseUrl { get; set; } = string.Empty;
     public string Model { get; set; } = string.Empty;
     public string ApiKey { get; set; } = string.Empty;
@@ -121,17 +111,7 @@ public sealed class AiProviderProfile
     public AiProviderProfile Clone() => (AiProviderProfile)MemberwiseClone();
 
     [JsonIgnore]
-    public string CategoryLabel => Category switch
-    {
-        AiProviderCategory.PublicFree => "公用免费",
-        AiProviderCategory.FreeTier => "免费额度",
-        AiProviderCategory.Paid => "付费",
-        AiProviderCategory.Local => "本地",
-        _ => "自定义"
-    };
-
-    [JsonIgnore]
-    public string DisplayLabel => $"{DisplayName}  ·  {CategoryLabel}";
+    public string DisplayLabel => DisplayName;
 }
 
 public sealed class PluginSettings
@@ -143,7 +123,7 @@ public sealed class PluginSettings
 
 public sealed class AiSettings
 {
-    public string ActiveProfileId { get; set; } = "pollinations-openai";
+    public string ActiveProfileId { get; set; } = "custom-openai-compatible";
     public List<AiProviderProfile> Profiles { get; set; } = [];
     public string SystemPrompt { get; set; } = string.Empty;
     public int RequestTimeoutSeconds { get; set; } = 45;
@@ -152,6 +132,12 @@ public sealed class AiSettings
 public sealed class ReviewSettings
 {
     public int MaxConcurrentReviews { get; set; } = 3;
+
+    /// <summary>单次 AI 请求合并审查的条数；多条共用一份系统提示词，设为 1 时逐条请求。</summary>
+    public int ItemsPerReviewRequest { get; set; } = 5;
+
+    /// <summary>播放队列剩余条数不高于此值时，在后台提前抓取并审查下一批内容；设为 0 时仅在队列耗尽后才补充。</summary>
+    public int RefillThreshold { get; set; } = 1;
     public ReviewFailureAction FailureAction { get; set; } = ReviewFailureAction.ManualReview;
     public int MaxHistoryItems { get; set; } = 500;
     public bool LogFullPrompts { get; set; } = true;
@@ -168,6 +154,10 @@ public sealed class QuoteProviderConfig
 {
     public bool IsEnabled { get; set; }
     public int Weight { get; set; } = 1;
+
+    /// <summary>该来源的内容是否先经 AI 审查再播放；关闭时仅应用本地排除列表。</summary>
+    public bool IsAiReviewEnabled { get; set; } = true;
+
     public Dictionary<string, string> Options { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
     public string GetOption(string key, string defaultValue = "")
@@ -190,4 +180,7 @@ public sealed class QuoteRequestOptions
     public int MaxBufferedItems { get; init; } = 12;
     public IReadOnlyList<string> IgnoreTerms { get; init; } = [];
     public string RefreshSessionId { get; init; } = Guid.NewGuid().ToString("N");
+
+    /// <summary>组件自带的额外来源（如用户自定义来源），与内置来源一同参与加权选择。</summary>
+    public IReadOnlyList<Services.IQuoteProvider> ExtraProviders { get; init; } = [];
 }

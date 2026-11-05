@@ -1,25 +1,32 @@
 ﻿using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
-using Motivation.Core;
-using Motivation.Models;
+using IslandQuotes.Core;
+using IslandQuotes.Models;
+using IslandQuotes.Services;
 
-namespace Motivation.ViewModels;
+namespace IslandQuotes.ViewModels;
 
-/// <summary>AI 审查与供应商设置页的视图模型。</summary>
+/// <summary>AI 审查设置页的视图模型。</summary>
 public sealed class AiSettingsViewModel : ObservableObject
 {
     PluginSettings? _settings;
     AiProviderProfile? _selectedProfile;
+    AiProviderProfile? _selectedThirdPartyProfile;
+    AiProviderProfile? _customProfile;
+    bool _isCustomMode;
     ReviewFailureAction _failureAction = ReviewFailureAction.ManualReview;
     string _systemPrompt = string.Empty;
     int _maxConcurrentReviews = 3;
+    int _itemsPerReviewRequest = 5;
+    int _refillThreshold = 1;
     int _maxHistoryItems = 500;
     int _requestTimeoutSeconds = 45;
     bool _logFullPrompts = true;
     bool _logFullResponses = true;
     bool _logEnabled = true;
     int _retentionDays = 30;
+    string _testText = "当有一天你不再纠结于答案 当我们又重逢于天涯或沧海";
     bool _isBusy;
     string _statusMessage = "尚未加载设置。";
 
@@ -42,6 +49,97 @@ public sealed class AiSettingsViewModel : ObservableObject
 
     public ObservableCollection<AiProviderProfile> Profiles { get; } = [];
 
+    /// <summary>「第三方模型提供商」页签中可选的内置供应商（不含通用 OpenAI 兼容配置）。</summary>
+    public ObservableCollection<AiProviderProfile> ThirdPartyProfiles { get; } = [];
+
+    /// <summary>当前是否处于「自定义模型 API」页签；切换页签时同步切换正在编辑的预设。</summary>
+    public bool IsCustomMode
+    {
+        get => _isCustomMode;
+        set
+        {
+            if (!SetProperty(ref _isCustomMode, value)) return;
+            OnPropertyChanged(nameof(IsThirdPartyMode));
+            OnPropertyChanged(nameof(ModeDescription));
+            SelectedProfile = value ? _customProfile : SelectedThirdPartyProfile;
+        }
+    }
+
+    public bool IsThirdPartyMode
+    {
+        get => !IsCustomMode;
+        set => IsCustomMode = !value;
+    }
+
+    public string ModeDescription => IsCustomMode
+        ? "连接任意 OpenAI 兼容、Anthropic Messages 或 Gemini 协议的服务，或自建网关。"
+        : "从内置目录中选择 DeepSeek、通义千问、Gemini 等提供商，填入其 API 密钥即可使用。";
+
+    public AiProviderProfile? SelectedThirdPartyProfile
+    {
+        get => _selectedThirdPartyProfile;
+        set
+        {
+            if (!SetProperty(ref _selectedThirdPartyProfile, value) || IsCustomMode) return;
+            SelectedProfile = value;
+        }
+    }
+
+    /// <summary>当前预设的 API 密钥；经由视图模型转发以便实时刷新未填写提示。</summary>
+    public string SelectedApiKey
+    {
+        get => SelectedProfile?.ApiKey ?? string.Empty;
+        set
+        {
+            if (SelectedProfile is null || SelectedProfile.ApiKey == value) return;
+            SelectedProfile.ApiKey = value ?? string.Empty;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(ShowApiKeyWarning));
+        }
+    }
+
+    public bool ShowApiKeyWarning => SelectedProfile is { RequiresApiKey: true } profile
+                                     && string.IsNullOrWhiteSpace(profile.ApiKey);
+
+    /// <summary>API 地址输入框的占位文本：内置预设显示其官方默认地址。</summary>
+    public string BaseUrlWatermark =>
+        AiProviderPresetCatalog.FindPreset(SelectedProfile?.PresetId ?? string.Empty)?.BaseUrl is { Length: > 0 } url
+            ? url
+            : "https://api.example.com/v1";
+
+    /// <summary>最近一次从当前供应商获取到的模型列表。</summary>
+    public ObservableCollection<string> AvailableModels { get; } = [];
+
+    public bool HasAvailableModels => AvailableModels.Count > 0;
+
+    /// <summary>当前预设的模型名称；AiProviderProfile 不发出变更通知，因此经由视图模型同步文本框与下拉框。</summary>
+    public string SelectedModel
+    {
+        get => SelectedProfile?.Model ?? string.Empty;
+        set
+        {
+            if (SelectedProfile is null || SelectedProfile.Model == value) return;
+            SelectedProfile.Model = value ?? string.Empty;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(SelectedAvailableModel));
+        }
+    }
+
+    /// <summary>从可用模型下拉框中选择后写回当前预设的模型字段。</summary>
+    public string? SelectedAvailableModel
+    {
+        get => SelectedProfile is null
+            ? null
+            : AvailableModels.FirstOrDefault(model => string.Equals(model, SelectedProfile.Model, StringComparison.Ordinal));
+        set
+        {
+            if (SelectedProfile is null || string.IsNullOrWhiteSpace(value) || SelectedProfile.Model == value) return;
+            SelectedProfile.Model = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(SelectedModel));
+        }
+    }
+
     public IReadOnlyList<LabeledValue<AiProtocol>> Protocols { get; }
 
     /// <summary>审查失败时可选择的行为；UI 使用带中文标签的 FailureActionOptions。</summary>
@@ -55,11 +153,14 @@ public sealed class AiSettingsViewModel : ObservableObject
         set
         {
             if (!SetProperty(ref _selectedProfile, value)) return;
+            AvailableModels.Clear();
+            OnPropertyChanged(nameof(HasAvailableModels));
+            OnPropertyChanged(nameof(SelectedModel));
+            OnPropertyChanged(nameof(SelectedAvailableModel));
             OnPropertyChanged(nameof(SelectedProtocolChoice));
-            OnPropertyChanged(nameof(ApiKeyRequirementText));
-            OnPropertyChanged(nameof(CategoryPrivacyWarning));
-            OnPropertyChanged(nameof(HasCategoryPrivacyWarning));
-            OnPropertyChanged(nameof(SelectedProfileSummary));
+            OnPropertyChanged(nameof(SelectedApiKey));
+            OnPropertyChanged(nameof(ShowApiKeyWarning));
+            OnPropertyChanged(nameof(BaseUrlWatermark));
         }
     }
 
@@ -109,6 +210,18 @@ public sealed class AiSettingsViewModel : ObservableObject
         set => SetProperty(ref _maxConcurrentReviews, Math.Clamp(value, 1, 10));
     }
 
+    public int ItemsPerReviewRequest
+    {
+        get => _itemsPerReviewRequest;
+        set => SetProperty(ref _itemsPerReviewRequest, Math.Clamp(value, 1, 10));
+    }
+
+    public int RefillThreshold
+    {
+        get => _refillThreshold;
+        set => SetProperty(ref _refillThreshold, Math.Clamp(value, 0, 100));
+    }
+
     public int MaxHistoryItems
     {
         get => _maxHistoryItems;
@@ -145,6 +258,13 @@ public sealed class AiSettingsViewModel : ObservableObject
         set => SetProperty(ref _retentionDays, Math.Clamp(value, 1, 3650));
     }
 
+    /// <summary>连接测试时送审的文本，用于查看该文本的风险评级。</summary>
+    public string TestText
+    {
+        get => _testText;
+        set => SetProperty(ref _testText, value ?? string.Empty);
+    }
+
     public bool IsBusy
     {
         get => _isBusy;
@@ -163,27 +283,6 @@ public sealed class AiSettingsViewModel : ObservableObject
         private set => SetProperty(ref _statusMessage, value);
     }
 
-    public string ApiKeyRequirementText => SelectedProfile?.RequiresApiKey == true
-        ? "此供应商需要 API Key；可填写 env:环境变量名。留空时仍可保存，但连接测试会失败。"
-        : "此供应商通常不需要 API Key；留空即可，也可填写环境变量引用。";
-
-    public string SelectedProfileSummary => SelectedProfile is null
-        ? "尚未选择供应商"
-        : $"当前选择：{SelectedProfile.DisplayLabel}";
-
-    public bool HasCategoryPrivacyWarning => SelectedProfile?.Category is
-        AiProviderCategory.PublicFree or AiProviderCategory.FreeTier;
-
-    public string CategoryPrivacyWarning => SelectedProfile?.Category switch
-    {
-        AiProviderCategory.PublicFree =>
-            "公用免费端点可能记录或复用发送的文本，且可能限流。请勿发送敏感内容；若在意隐私，请改用本地或自备密钥的供应商。",
-        AiProviderCategory.FreeTier =>
-            "免费额度端点可能记录请求或受限流影响。请先阅读供应商隐私政策。",
-        AiProviderCategory.Local =>
-            "本地端点通常不离开本机，但仍请确认服务监听地址与访问权限。",
-        _ => string.Empty
-    };
     /// <summary>从运行时设置重新加载供应商与全局策略；不会读取或显示完整密钥。</summary>
     public void Reload()
     {
@@ -191,16 +290,33 @@ public sealed class AiSettingsViewModel : ObservableObject
         {
             _settings = PluginRuntime.SettingsStore.Settings;
             Profiles.Clear();
+            ThirdPartyProfiles.Clear();
             foreach (AiProviderProfile profile in _settings.Ai.Profiles)
+            {
                 Profiles.Add(profile);
+                if (profile.Id != AiProviderPresetCatalog.DefaultProfileId)
+                    ThirdPartyProfiles.Add(profile);
+            }
 
+            _customProfile = Profiles.FirstOrDefault(profile => profile.Id == AiProviderPresetCatalog.DefaultProfileId);
             ActiveProfileId = _settings.Ai.ActiveProfileId;
-            SelectedProfile = Profiles.FirstOrDefault(profile => profile.Id == ActiveProfileId)
-                ?? Profiles.FirstOrDefault();
+            AiProviderProfile? active = Profiles.FirstOrDefault(profile => profile.Id == ActiveProfileId);
+            _selectedThirdPartyProfile = active is not null && ThirdPartyProfiles.Contains(active)
+                ? active
+                : ThirdPartyProfiles.FirstOrDefault();
+            OnPropertyChanged(nameof(SelectedThirdPartyProfile));
+            _isCustomMode = active is not null && active == _customProfile
+                            || active is null && _selectedThirdPartyProfile is null;
+            OnPropertyChanged(nameof(IsCustomMode));
+            OnPropertyChanged(nameof(IsThirdPartyMode));
+            OnPropertyChanged(nameof(ModeDescription));
+            SelectedProfile = _isCustomMode ? _customProfile : _selectedThirdPartyProfile;
             SystemPrompt = _settings.Ai.SystemPrompt;
             RequestTimeoutSeconds = _settings.Ai.RequestTimeoutSeconds;
             FailureAction = _settings.Review.FailureAction;
             MaxConcurrentReviews = _settings.Review.MaxConcurrentReviews;
+            ItemsPerReviewRequest = _settings.Review.ItemsPerReviewRequest;
+            RefillThreshold = _settings.Review.RefillThreshold;
             MaxHistoryItems = _settings.Review.MaxHistoryItems;
             LogFullPrompts = _settings.Review.LogFullPrompts;
             LogFullResponses = _settings.Review.LogFullResponses;
@@ -215,6 +331,9 @@ public sealed class AiSettingsViewModel : ObservableObject
         {
             _settings = null;
             Profiles.Clear();
+            ThirdPartyProfiles.Clear();
+            _customProfile = null;
+            SelectedThirdPartyProfile = null;
             SelectedProfile = null;
             StatusMessage = "AI 设置服务尚未就绪。请先启用插件并打开一次设置页面，或重启 ClassIsland。";
         }
@@ -281,6 +400,8 @@ public sealed class AiSettingsViewModel : ObservableObject
             _settings.Ai.RequestTimeoutSeconds = Math.Clamp(RequestTimeoutSeconds, 5, 180);
             _settings.Review.FailureAction = FailureAction;
             _settings.Review.MaxConcurrentReviews = Math.Clamp(MaxConcurrentReviews, 1, 10);
+            _settings.Review.ItemsPerReviewRequest = Math.Clamp(ItemsPerReviewRequest, 1, 10);
+            _settings.Review.RefillThreshold = Math.Clamp(RefillThreshold, 0, 100);
             _settings.Review.MaxHistoryItems = Math.Clamp(MaxHistoryItems, 10, 100000);
             _settings.Review.LogFullPrompts = LogFullPrompts;
             _settings.Review.LogFullResponses = LogFullResponses;
@@ -304,7 +425,7 @@ public sealed class AiSettingsViewModel : ObservableObject
             IsBusy = false;
         }
     }
-    /// <summary>保存当前配置后，用内置的良性测试内容调用当前 AI 供应商。</summary>
+    /// <summary>保存当前配置后，用测试文本调用当前 AI 供应商并显示其评级。</summary>
     public async Task TestAsync()
     {
         if (IsBusy) return;
@@ -316,11 +437,14 @@ public sealed class AiSettingsViewModel : ObservableObject
         {
             IsBusy = true;
             StatusMessage = "正在测试当前 AI 供应商连接…";
-            AiReviewResult result = await PluginRuntime.Queue.TestActiveAiAsync();
+            AiReviewResult result = await PluginRuntime.Queue.TestActiveAiAsync(TestText);
 
             if (result.IsSuccess)
             {
-                StatusMessage = $"连接测试成功：{RiskLabel(result.Risk)}，置信度 {result.Confidence:P0}。{Sanitize(result.Reason)}";
+                string categories = result.Categories.Count == 0
+                    ? string.Empty
+                    : $"分类：{string.Join("、", result.Categories)}。";
+                StatusMessage = $"连接测试成功：{RiskLabel(result.Risk)}，置信度 {result.Confidence:P0}。{categories}{Sanitize(result.Reason)}";
             }
             else
             {
@@ -330,6 +454,39 @@ public sealed class AiSettingsViewModel : ObservableObject
         catch (Exception ex)
         {
             StatusMessage = $"连接测试失败（{ex.GetType().Name}）。请检查网络、Base URL、协议与密钥后重试。";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    /// <summary>向当前选择的供应商查询可用模型，结果填入下拉列表供选择。</summary>
+    public async Task FetchModelsAsync()
+    {
+        if (IsBusy || SelectedProfile is null) return;
+
+        try
+        {
+            IsBusy = true;
+            StatusMessage = "正在获取可用模型…";
+            IReadOnlyList<string> models = await PluginRuntime.AiReview.ListModelsAsync(SelectedProfile);
+
+            AvailableModels.Clear();
+            foreach (string model in models)
+                AvailableModels.Add(model);
+            OnPropertyChanged(nameof(HasAvailableModels));
+            OnPropertyChanged(nameof(SelectedAvailableModel));
+
+            StatusMessage = models.Count == 0
+                ? "供应商未返回任何模型。"
+                : $"已获取 {models.Count} 个可用模型，可在模型下方的列表中选择。";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = ex is OperationCanceledException
+                ? "获取模型列表超时。请检查网络与 Base URL 后重试。"
+                : $"获取模型列表失败：{Sanitize(ex.Message)}";
         }
         finally
         {
