@@ -17,6 +17,7 @@ public static class PluginRuntime
     private static AiReviewService? _aiReview;
     private static AuditLogService? _auditLog;
     private static ReviewQueueService? _queue;
+    private static CancellationTokenSource? _lifetimeCts;
     private static bool _initialized;
     private static bool _shutdown;
 
@@ -50,6 +51,13 @@ public static class PluginRuntime
 
     public static ReviewQueueService Queue =>
         GetRequired(_queue, nameof(Queue));
+
+    /// <summary>
+    /// 插件运行期生命周期令牌，随 <see cref="ShutdownAsync"/> 取消。
+    /// 后台补货等不依赖某个组件视觉树的任务应使用它，避免主界面隐藏导致任务被误取消。
+    /// </summary>
+    public static CancellationToken LifetimeToken =>
+        GetRequired(_lifetimeCts, nameof(LifetimeToken)).Token;
 
     /// <summary>
     /// 加载插件设置、创建所有服务并恢复审查/播放队列。重复调用为空操作。
@@ -92,6 +100,7 @@ public static class PluginRuntime
             _aiReview = aiReview;
             _auditLog = auditLog;
             _queue = queue;
+            _lifetimeCts = new CancellationTokenSource();
             _initialized = true;
         }
     }
@@ -115,6 +124,8 @@ public static class PluginRuntime
                 queue = _queue;
                 settingsStore = _settingsStore;
                 auditLog = _auditLog;
+                // 先中止在途的后台任务（如队列补货），再刷新各服务状态。
+                _lifetimeCts?.Cancel();
             }
 
             if (queue is not null)

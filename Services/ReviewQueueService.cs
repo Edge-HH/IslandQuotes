@@ -100,32 +100,43 @@ public sealed class ReviewQueueService
     /// 获取下一条可展示内容。播放队列非空时严格按 FIFO 出队；
     /// 否则先批量抓取并审查，再取出第一条自动通过的内容。
     /// </summary>
+    /// <remarks>
+    /// 出队走快路径、不获取 <see cref="_operationGate"/>：集合变更全部经 UI 线程串行化，
+    /// 且展示调用方（组件）自身保证串行，因此后台补货（抓取+审查管线）在途时出队不必等待，
+    /// 播放节奏不受补货耗时影响。只有播放队列耗尽需要现场补充时才进入互斥的慢路径。
+    /// </remarks>
     public async Task<ReviewQueueItem?> GetNextForDisplayAsync(
         QuoteRequestOptions options,
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(options);
-        bool entered = false;
         try
         {
-            await _operationGate.WaitAsync(ct).ConfigureAwait(false);
-            entered = true;
-            await EnsureInitializedLockedAsync(ct).ConfigureAwait(false);
+            await EnsureInitializedAsync(ct).ConfigureAwait(false);
 
-            ReviewQueueItem? queued = await DequeueFirstApprovedLockedAsync().ConfigureAwait(false);
+            ReviewQueueItem? queued = await DequeueFirstApprovedAsync().ConfigureAwait(false);
             if (queued is not null)
             {
                 return queued;
             }
 
-            await FillBatchLockedAsync(options, ct).ConfigureAwait(false);
-            if (ct.IsCancellationRequested)
+            await _operationGate.WaitAsync(ct).ConfigureAwait(false);
+            try
             {
-                await SetStatusAndNotifyAsync("操作已取消；已审查的内容已安全保留。").ConfigureAwait(false);
-                return null;
-            }
+                await EnsureInitializedLockedAsync(ct).ConfigureAwait(false);
+                await FillBatchLockedAsync(options, ct).ConfigureAwait(false);
+                if (ct.IsCancellationRequested)
+                {
+                    await SetStatusAndNotifyAsync("操作已取消；已审查的内容已安全保留。").ConfigureAwait(false);
+                    return null;
+                }
 
-            return await DequeueFirstApprovedLockedAsync().ConfigureAwait(false);
+                return await DequeueFirstApprovedAsync().ConfigureAwait(false);
+            }
+            finally
+            {
+                _operationGate.Release();
+            }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -138,12 +149,24 @@ public sealed class ReviewQueueService
             await SetStatusAndNotifyAsync($"获取内容失败：{ex.Message}").ConfigureAwait(false);
             return null;
         }
+    }
+
+    /// <summary>确保队列已从快照恢复；仅在尚未初始化时获取操作闸门。</summary>
+    private async Task EnsureInitializedAsync(CancellationToken ct)
+    {
+        if (_initialized)
+        {
+            return;
+        }
+
+        await _operationGate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            await EnsureInitializedLockedAsync(ct).ConfigureAwait(false);
+        }
         finally
         {
-            if (entered)
-            {
-                _operationGate.Release();
-            }
+            _operationGate.Release();
         }
     }
 
@@ -727,7 +750,12 @@ public sealed class ReviewQueueService
 
         return null;
     }
-    private async Task<ReviewQueueItem?> DequeueFirstApprovedLockedAsync()
+    /// <summary>
+    /// 弹出播放队列头部第一条可安全展示的内容并标记为已展示。
+    /// 调用方不要求持有 <see cref="_operationGate"/>：集合变更经 UI 线程串行化，
+    /// 与补货、人工操作及快照恢复天然互斥。
+    /// </summary>
+    private async Task<ReviewQueueItem?> DequeueFirstApprovedAsync()
     {
         ReviewQueueItem? displayed = null;
         bool changed = false;

@@ -22,10 +22,13 @@ public partial class QuoteAiComponent : ComponentBase<QuoteAiConfig>
     readonly ContentSwapAnimator _subLabelAnimator;
 
     CancellationTokenSource? _lifetimeCts;
-    int _isUpdating;
+    int _updatePending;
     int _isRefilling;
     int _displayGeneration;
     bool _isAttached;
+
+    /// <summary>上一次刷新（无论成败）完成的时间；展示间隔从完成时刻起算，保证节奏稳定。</summary>
+    DateTime _lastUpdate;
 
     public QuoteAiComponent(ILessonsService lessonsService)
     {
@@ -53,8 +56,9 @@ public partial class QuoteAiComponent : ComponentBase<QuoteAiConfig>
             // 运行时尚未初始化时，下面的 UpdateAsync 会显示配置提示；这里静默等待。
         }
 
-        Settings.LastUpdate = DateTime.Now;
-        _ = UpdateAsync(_lifetimeCts.Token);
+        // 宿主在主界面隐藏（IsVisible=false 会脱离视觉树）后再显示时会重新 Attach；
+        // 这里必须走与计时器相同的间隔检查，否则每次显示面板都会立即出队一条内容。
+        TryTriggerRefresh();
     }
 
     void OnDetachedFromVisualTree(object? sender, VisualTreeAttachmentEventArgs e)
@@ -70,23 +74,32 @@ public partial class QuoteAiComponent : ComponentBase<QuoteAiConfig>
 
     void OnPostMainTimerTicked(object? sender, EventArgs e)
     {
+        TryTriggerRefresh();
+    }
+
+    /// <summary>
+    /// 统一的刷新入口：距上次刷新完成不足间隔时不触发，已有刷新在途时不再叠加。
+    /// 宿主 PostMainTimerTicked 约 50ms 触发一次，节流完全依赖本方法。
+    /// </summary>
+    void TryTriggerRefresh()
+    {
         if (!_isAttached || Settings.UpdateTimeGapSeconds <= 0) return;
+        if (Interlocked.Exchange(ref _updatePending, 1) != 0) return;
 
         DateTime now = DateTime.Now;
-        if (Settings.LastUpdate != default
-            && (now - Settings.LastUpdate).TotalSeconds < Settings.UpdateTimeGapSeconds)
+        if (_lastUpdate != default
+            && (now - _lastUpdate).TotalSeconds < Settings.UpdateTimeGapSeconds)
+        {
+            Volatile.Write(ref _updatePending, 0);
             return;
+        }
 
-        // 与原组件一致：在开始工作前记录时间，避免网络请求较慢时每个计时周期都重复触发。
-        Settings.LastUpdate = now;
         CancellationToken token = _lifetimeCts?.Token ?? CancellationToken.None;
         _ = UpdateAsync(token);
     }
 
     async Task UpdateAsync(CancellationToken cancellationToken)
     {
-        if (Interlocked.Exchange(ref _isUpdating, 1) == 1) return;
-
         try
         {
             if (!_isAttached) return;
@@ -122,8 +135,9 @@ public partial class QuoteAiComponent : ComponentBase<QuoteAiConfig>
 
             await Dispatcher.UIThread.InvokeAsync(() => DisplayNext(item, cancellationToken));
 
+            // 补货使用插件级生命周期令牌：主界面隐藏导致组件脱离视觉树时，不应中断在途的抓取与审查。
             if (PluginRuntime.Queue.QueuedCount <= PluginRuntime.SettingsStore.Settings.Review.RefillThreshold)
-                _ = RefillInBackgroundAsync(options, cancellationToken);
+                _ = RefillInBackgroundAsync(options, PluginRuntime.LifetimeToken);
         }
         catch (OperationCanceledException)
         {
@@ -137,7 +151,10 @@ public partial class QuoteAiComponent : ComponentBase<QuoteAiConfig>
         }
         finally
         {
-            Interlocked.Exchange(ref _isUpdating, 0);
+            // 无论成败都在完成时推进节流时间戳：刷新间隔稳定为 max(设置间隔, 上次刷新耗时)，
+            // 不会因网络或审查耗时抖动而忽快忽慢。
+            _lastUpdate = DateTime.Now;
+            Volatile.Write(ref _updatePending, 0);
         }
     }
 

@@ -41,8 +41,6 @@ public sealed class QuoteAiConfig : ObservableObject
         set => SetProperty(ref _ignoreListString, value ?? string.Empty);
     }
 
-    public DateTime LastUpdate { get; set; } = DateTime.Today;
-
     public int LengthLimitation { get; set; }
 
     public TimeSpan UpdateTimeGap { get; set; } = TimeSpan.FromSeconds(30);

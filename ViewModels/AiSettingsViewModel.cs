@@ -494,14 +494,15 @@ public sealed class AiSettingsViewModel : ObservableObject
         }
     }
 
-    /// <summary>使用系统文件管理器打开审计日志目录。</summary>
+    /// <summary>使用系统文件管理器打开审计日志目录；通过 Win32 ShellExecuteW 打开，参数显式传递。</summary>
     public void OpenLogDirectory()
     {
         try
         {
             string directory = PluginRuntime.AuditLog.LogDirectory;
             Directory.CreateDirectory(directory);
-            Process.Start(new ProcessStartInfo(directory) { UseShellExecute = true });
+            // 通过 ShellExecuteW 直接打开目录；参数显式传递，不经过 shell 命令行。
+            ShellFolder.OpenInFileManager(directory);
             StatusMessage = $"已请求打开日志目录：{directory}";
         }
         catch

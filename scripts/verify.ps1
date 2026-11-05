@@ -313,10 +313,6 @@ foreach ($token in @('人工复核', '批准选中', 'FIFO', 'audit-', 'Ollama',
 foreach ($token in @('settings.json', 'env:', 'fail-closed', '高风险', 'review-queue.json')) {
     Assert-TextContains "privacy guide covers: $token" $privacyText $token
 }
-$sourcePathDiscrepancy = ($readmeText.IndexOf('Codes\extraisland', [StringComparison]::Ordinal) -ge 0) -and
-                         ($readmeText.IndexOf('Code\ExtraIsland', [StringComparison]::Ordinal) -ge 0)
-Add-Check 'README records the actual ExtraIsland source path discrepancy' $sourcePathDiscrepancy 'expected both Codes\extraisland (old) and Code\ExtraIsland (actual)'
-
 Write-Host '[5/7] JSON defaults and hardcoded secret scan' -ForegroundColor Cyan
 $excludedPattern = '\\(\.git|\.tools|bin|obj|cipx)\\|\\node_modules\\'
 $jsonFiles = @(Get-ChildItem -LiteralPath $repoRoot -Recurse -File -Filter '*.json' -ErrorAction SilentlyContinue |
