@@ -1,0 +1,99 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '为已存在的 tag（如 v1.0.0）补建 Release；push v* 标签时无需填写'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: 构建并发布
+    runs-on: windows-latest
+    steps:
+      - name: 检出目标版本
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: 安装 .NET SDK 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.x
+
+      - name: 确定并校验发布标签
+        id: meta
+        shell: pwsh
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          $tag = $env:INPUT_TAG
+          if ([string]::IsNullOrWhiteSpace($tag)) {
+            if ($env:GITHUB_REF_TYPE -ne 'tag') {
+              Write-Error "workflow_dispatch 需要填写 tag 输入（例如 v1.0.0）；push v* 标签时无需填写。"
+              exit 1
+            }
+            $tag = $env:GITHUB_REF_NAME
+          }
+          if ($tag -notmatch '^v\d+(\.\d+){1,3}$') {
+            Write-Error "标签名 '$tag' 不符合 v<版本号> 格式（例如 v1.0.0）。"
+            exit 1
+          }
+          $manifest = Get-Content -LiteralPath 'manifest.yml' -Raw
+          $m = [regex]::Match($manifest, '(?m)^\s*version:\s*"?([0-9]+(?:\.[0-9]+)+)"?\s*$')
+          if (-not $m.Success) {
+            Write-Error '无法从 manifest.yml 读取 version 字段。'
+            exit 1
+          }
+          $parts = $m.Groups[1].Value.Split('.')
+          $expected = 'v' + (($parts | Select-Object -First 3) -join '.')
+          if ($tag -ne $expected) {
+            Write-Error "标签 '$tag' 与 manifest.yml 版本 '$($m.Groups[1].Value)' 不一致（期望 '$expected'）。请先同步 manifest.yml 与标签。"
+            exit 1
+          }
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+
+      # verify.ps1 = 静态验收 + Release 构建 + CIPX 打包与包内容检查，
+      # 任一检查失败都不会发布。
+      - name: 运行验收脚本并构建 CIPX
+        shell: pwsh
+        run: ./scripts/verify.ps1
+
+      - name: 生成 SHA256 校验文件
+        shell: pwsh
+        run: |
+          $hash = (Get-FileHash -LiteralPath 'cipx/IslandQuotes.cipx' -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  IslandQuotes.cipx" | Out-File -LiteralPath 'cipx/IslandQuotes.cipx.sha256' -Encoding utf8NoBOM
+          Write-Host "SHA256: $hash"
+
+      - name: 发布 GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: IslandQuotes ${{ steps.meta.outputs.tag }}
+          body: |
+            ClassIsland v2 每日一言插件（含可选 AI 内容审查）的插件包。
+
+            ## 安装
+            1. 下载 `IslandQuotes.cipx`。
+            2. 打开 ClassIsland 的插件管理界面，选择导入本地插件包，选中该文件（宿主需 2.1.0.1 及以上）。
+            3. 配置步骤见[用户指南](https://github.com/Edge-HH/IslandQuotes/blob/main/docs/USER_GUIDE.md)。
+
+            ## 校验
+            `IslandQuotes.cipx.sha256` 为 SHA256 校验文件（格式 `<hash>  IslandQuotes.cipx`），可用 `sha256sum -c IslandQuotes.cipx.sha256` 或 `Get-FileHash` 比对。
+          files: |
+            cipx/IslandQuotes.cipx
+            cipx/IslandQuotes.cipx.sha256
+          fail_on_unmatched_files: true
+          generate_release_notes: true
