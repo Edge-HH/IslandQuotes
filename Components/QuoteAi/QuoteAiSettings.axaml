@@ -1,0 +1,140 @@
+<ci:ComponentBase x:Class="Motivation.Components.QuoteAi.QuoteAiSettings"
+                  x:TypeArguments="local:QuoteAiConfig"
+                  xmlns="https://github.com/avaloniaui"
+                  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                  xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+                  xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+                  xmlns:local="clr-namespace:Motivation.Components.QuoteAi"
+                  xmlns:ci="http://classisland.tech/schemas/xaml/core"
+                  mc:Ignorable="d" d:DesignHeight="560" d:DesignWidth="420"
+                  AttachedToVisualTree="OnAttachedToVisualTree">
+    <ScrollViewer DataContext="{Binding RelativeSource={RelativeSource FindAncestor, AncestorType=local:QuoteAiSettings}}">
+        <StackPanel Classes="settings-container animated-intro">
+            <Border Background="#204169e1" CornerRadius="4" Margin="0 0 0 8" Padding="10">
+                <StackPanel Spacing="4">
+                    <TextBlock Text="AI 审查与第三方内容" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                    <TextBlock Text="AI 供应商预设（含公用免费类别）、API Key、连接测试和人工复核队列位于插件设置页面。默认失败即关闭：网络或解析失败的内容不会自动放行。"
+                               TextWrapping="Wrap" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                </StackPanel>
+            </Border>
+            <TextBlock Text="第三方来源（内容先经 AI 审查）" FontWeight="SemiBold" Margin="4 8 4 4"/>
+            <ItemsControl ItemsSource="{Binding ProviderItems}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1"
+                                CornerRadius="4" Padding="10" Margin="0 3">
+                            <StackPanel Spacing="6">
+                                <Grid ColumnDefinitions="*,Auto,Auto">
+                                    <StackPanel Spacing="2">
+                                        <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                                        <TextBlock Text="{Binding Description}" FontSize="{DynamicResource MainWindowSecondaryFontSize}"
+                                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="8,0">
+                                        <TextBlock Text="权重" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                        <NumericUpDown Value="{Binding Configuration.Weight, Mode=TwoWay}"
+                                                       Minimum="0" Maximum="10000" FormatString="0"
+                                                       InputMethod.IsInputMethodEnabled="False" MinWidth="86"/>
+                                    </StackPanel>
+                                    <ToggleSwitch Grid.Column="2" IsChecked="{Binding Configuration.IsEnabled, Mode=TwoWay}"
+                                                  OnContent="启用" OffContent="停用" VerticalAlignment="Center"/>
+                                </Grid>
+                                <ContentControl Content="{Binding SettingsControl}" IsVisible="{Binding HasSettings}" Margin="0,2,0,0"/>
+                            </StackPanel>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <TextBlock Text="获取与缓冲" FontWeight="SemiBold" Margin="4 12 4 4"/>
+            <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="10">
+                <StackPanel Grid.Row="0" Grid.Column="0" Spacing="3">
+                    <TextBlock Text="字数限制" FontWeight="SemiBold"/>
+                    <TextBlock Text="0 表示不限制；超长内容会重新获取。" FontSize="12"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"/>
+                    <NumericUpDown Value="{Binding Settings.LengthLimitation, Mode=TwoWay}"
+                                   Minimum="0" Maximum="1000" FormatString="0"
+                                   InputMethod.IsInputMethodEnabled="False"/>
+                </StackPanel>
+                <StackPanel Grid.Row="0" Grid.Column="1" Spacing="3">
+                    <TextBlock Text="刷新间隔（秒）" FontWeight="SemiBold"/>
+                    <TextBlock Text="0 表示关闭自动刷新。" FontSize="12"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"/>
+                    <NumericUpDown Value="{Binding Settings.UpdateTimeGapSeconds, Mode=TwoWay}"
+                                   Minimum="0" Maximum="86400" FormatString="0.0"
+                                   InputMethod.IsInputMethodEnabled="False"/>
+                </StackPanel>
+                <StackPanel Grid.Row="1" Grid.Column="0" Spacing="3" Margin="0,8,0,0">
+                    <TextBlock Text="每批审查数量" FontWeight="SemiBold"/>
+                    <TextBlock Text="1-10 条；不足时批量拉取并审查。" FontSize="12"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"/>
+                    <NumericUpDown Value="{Binding Settings.BatchSize, Mode=TwoWay}"
+                                   Minimum="1" Maximum="10" FormatString="0"
+                                   InputMethod.IsInputMethodEnabled="False"/>
+                </StackPanel>
+                <StackPanel Grid.Row="1" Grid.Column="1" Spacing="3" Margin="0,8,0,0">
+                    <TextBlock Text="最大缓冲条数" FontWeight="SemiBold"/>
+                    <TextBlock Text="待复核与待播放内容的总上限（1-100）。" FontSize="12"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"/>
+                    <NumericUpDown Value="{Binding Settings.MaxBufferedItems, Mode=TwoWay}"
+                                   Minimum="1" Maximum="100" FormatString="0"
+                                   InputMethod.IsInputMethodEnabled="False"/>
+                </StackPanel>
+            </Grid>
+            <TextBlock Text="展示方式" FontWeight="SemiBold" Margin="4 12 4 4"/>
+            <Border BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1" CornerRadius="4" Padding="10">
+                <StackPanel Spacing="8">
+                    <Grid ColumnDefinitions="Auto,Auto,Auto" ColumnSpacing="16">
+                        <ToggleSwitch Grid.Column="0" IsChecked="{Binding Settings.IsAuthorShowEnabled, Mode=TwoWay}"
+                                      OnContent="显示作者" OffContent="隐藏作者"/>
+                        <ToggleSwitch Grid.Column="1" IsChecked="{Binding Settings.IsTitleShowEnabled, Mode=TwoWay}"
+                                      OnContent="显示出处" OffContent="隐藏出处"/>
+                        <ToggleSwitch Grid.Column="2" IsChecked="{Binding Settings.ShowQueueStatus, Mode=TwoWay}"
+                                      OnContent="显示队列状态" OffContent="精简状态"/>
+                    </Grid>
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                        <StackPanel Grid.Column="0" Spacing="3">
+                            <TextBlock Text="附加信息展示规则" FontWeight="SemiBold"/>
+                            <ComboBox SelectedIndex="{Binding Settings.AttributesRuleIndex, Mode=TwoWay}">
+                                <ComboBoxItem Content="同时展示"/>
+                                <ComboBoxItem Content="分开展示"/>
+                            </ComboBox>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Spacing="3">
+                            <TextBlock Text="附加信息展示时长（秒）" FontWeight="SemiBold"/>
+                            <NumericUpDown Value="{Binding Settings.AttributesShowingInterval, Mode=TwoWay}"
+                                           Minimum="0" Maximum="86400" FormatString="0"
+                                           InputMethod.IsInputMethodEnabled="False"/>
+                        </StackPanel>
+                    </Grid>
+                    <Grid ColumnDefinitions="Auto,Auto" ColumnSpacing="16">
+                        <ToggleSwitch Grid.Column="0" IsChecked="{Binding Settings.IsAnimationEnabled, Mode=TwoWay}"
+                                      OnContent="启用切换动画" OffContent="禁用切换动画"/>
+                        <ToggleSwitch Grid.Column="1" IsChecked="{Binding Settings.IsSwapAnimationEnabled, Mode=TwoWay}"
+                                      OnContent="翻页式动画" OffContent="轻淡入淡出"/>
+                    </Grid>
+                </StackPanel>
+            </Border>
+            <TextBlock Text="排除词" FontWeight="SemiBold" Margin="4 12 4 4"/>
+            <Border BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1" CornerRadius="4" Padding="8">
+                <StackPanel Spacing="4">
+                    <TextBlock Text="一行一个。命中排除词的内容会在本地直接拦截，不进入播放队列。"
+                               FontSize="12" TextWrapping="Wrap"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                    <TextBox Text="{Binding Settings.IgnoreListString, Mode=TwoWay}"
+                             AcceptsReturn="True" TextWrapping="Wrap"
+                             VerticalContentAlignment="Top" MinHeight="88"/>
+                </StackPanel>
+            </Border>
+            <Grid ColumnDefinitions="*,Auto" Margin="0,12,0,0">
+                <TextBlock x:Name="RuntimeStatusText"
+                           Text="审计日志记录审查、拦截与播放事件。"
+                           VerticalAlignment="Center" TextWrapping="Wrap"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                <Button Grid.Column="1" Content="打开日志目录"
+                        Click="OpenLogDirectoryButton_OnClick" Margin="8,0,0,0"/>
+            </Grid>
+        </StackPanel>
+    </ScrollViewer>
+</ci:ComponentBase>

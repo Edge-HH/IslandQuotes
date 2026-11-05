@@ -1,0 +1,32 @@
+﻿<ci:ComponentBase x:Class="Motivation.Components.QuoteAi.QuoteAiComponent"
+                  x:TypeArguments="local:QuoteAiConfig"
+                  xmlns="https://github.com/avaloniaui"
+                  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                  xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+                  xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+                  xmlns:local="clr-namespace:Motivation.Components.QuoteAi"
+                  xmlns:ci="http://classisland.tech/schemas/xaml/core"
+                  mc:Ignorable="d"
+                  AttachedToVisualTree="OnAttachedToVisualTree"
+                  DetachedFromVisualTree="OnDetachedFromVisualTree">
+    <Grid ClipToBounds="True">
+        <StackPanel Orientation="Horizontal">
+            <Label x:Name="MainLabel"
+                   VerticalAlignment="Center"
+                   FontSize="{DynamicResource MainWindowLargeFontSize}"
+                   Content="等待经 AI 审查的内容…">
+                <Label.RenderTransform>
+                    <TranslateTransform />
+                </Label.RenderTransform>
+            </Label>
+            <Label x:Name="SubLabel"
+                   IsVisible="False"
+                   VerticalAlignment="Center"
+                   FontSize="{DynamicResource MainWindowEmphasizedFontSize}">
+                <Label.RenderTransform>
+                    <TranslateTransform />
+                </Label.RenderTransform>
+            </Label>
+        </StackPanel>
+    </Grid>
+</ci:ComponentBase>

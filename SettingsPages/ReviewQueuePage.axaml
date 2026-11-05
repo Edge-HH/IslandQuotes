@@ -1,0 +1,170 @@
+﻿<ci:SettingsPageBase x:Class="Motivation.SettingsPages.ReviewQueuePage"
+                     xmlns="https://github.com/avaloniaui"
+                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+                     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+                     xmlns:ci="http://classisland.tech/schemas/xaml/core"
+                     mc:Ignorable="d" d:DesignHeight="760" d:DesignWidth="820"
+                     AttachedToVisualTree="OnAttachedToVisualTree"
+                     DetachedFromVisualTree="OnDetachedFromVisualTree">
+    <ScrollViewer>
+        <StackPanel Classes="settings-container animated-intro" Spacing="12">
+            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                <StackPanel Spacing="2">
+                    <TextBlock Text="人工复核与播放队列" FontSize="26" FontWeight="Bold"/>
+                    <TextBlock Text="中风险内容必须逐条或批量批准后才会进入 FIFO 播放队列；高风险内容与已拦截记录不会显示正文。"
+                               TextWrapping="Wrap" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                </StackPanel>
+                <Button Grid.Column="1" Content="刷新队列" Click="RefreshButton_OnClick" VerticalAlignment="Center"/>
+                <Button Grid.Column="2" Content="打开审计日志目录" Click="OpenLogDirectoryButton_OnClick" VerticalAlignment="Center"/>
+            </Grid>
+
+            <Grid ColumnDefinitions="*,*,*" ColumnSpacing="10">
+                <Border Grid.Column="0" Background="#204169e1" CornerRadius="4" Padding="12">
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="待复核" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                        <TextBlock Text="{Binding PendingCount}" FontSize="28" FontWeight="Bold"/>
+                        <TextBlock Text="中风险等待人工决定" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                    </StackPanel>
+                </Border>
+                <Border Grid.Column="1" Background="#22007A5A" CornerRadius="4" Padding="12">
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="排队播放" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                        <TextBlock Text="{Binding QueuedCount}" FontSize="28" FontWeight="Bold"/>
+                        <TextBlock Text="按批准顺序先进先出" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                    </StackPanel>
+                </Border>
+                <Border Grid.Column="2" Background="#22C42B1C" CornerRadius="4" Padding="12">
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="已拦截" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                        <TextBlock Text="{Binding BlockedCount}" FontSize="28" FontWeight="Bold"/>
+                        <TextBlock Text="高风险或本地排除词拦截" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <TextBlock Text="{Binding StatusMessage}" TextWrapping="Wrap"
+                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+            <Border BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="4" Padding="12">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="待人工复核" FontSize="19" FontWeight="SemiBold"/>
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button Content="批准选中" Click="ApproveSelectedButton_OnClick" IsEnabled="{Binding IsAvailable}"/>
+                        <Button Content="拒绝选中" Click="RejectSelectedButton_OnClick" IsEnabled="{Binding IsAvailable}"/>
+                        <Button Content="全部批准" Click="ApproveAllButton_OnClick" IsEnabled="{Binding IsAvailable}"/>
+                        <Button Content="全部拒绝" Click="RejectAllButton_OnClick" IsEnabled="{Binding IsAvailable}"/>
+                    </StackPanel>
+                    <TextBlock Text="勾选左侧复选框可选择多项。批准后按操作顺序加入播放队列。"
+                               FontSize="12" TextWrapping="Wrap"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                    <ItemsControl ItemsSource="{Binding PendingManualReview}" IsVisible="{Binding HasPending}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                                        BorderThickness="1" CornerRadius="4" Padding="10" Margin="0,4">
+                                    <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="10">
+                                        <CheckBox Grid.Row="0" Grid.RowSpan="2" Grid.Column="0"
+                                                  IsChecked="{Binding IsSelected, Mode=TwoWay}" VerticalAlignment="Top"/>
+                                        <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding DisplayContent}"
+                                                   FontWeight="SemiBold" TextWrapping="Wrap"/>
+                                        <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding DisplayAttribution}"
+                                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"/>
+                                        <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Orientation="Horizontal" Spacing="12" Margin="0,6,0,0">
+                                            <TextBlock Text="{Binding RiskLabel}" FontWeight="SemiBold"/>
+                                            <TextBlock Text="{Binding ConfidenceLabel}" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                                            <TextBlock Text="{Binding CategoryLabel}" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                                        </StackPanel>
+                                        <TextBlock Grid.Row="3" Grid.ColumnSpan="2" Text="{Binding AiSummary}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                                        <TextBlock Grid.Row="4" Grid.ColumnSpan="2" Text="{Binding AiProviderLabel}"
+                                                   FontSize="12" TextWrapping="Wrap"
+                                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,3,0,0"/>
+                                        <Grid Grid.Row="5" Grid.ColumnSpan="2" ColumnDefinitions="*,Auto" Margin="0,6,0,0">
+                                            <StackPanel Spacing="2">
+                                                <TextBlock Text="{Binding SourceLabel}" FontSize="12" TextWrapping="Wrap"
+                                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                                                <TextBlock Text="{Binding CreatedAtLabel}" FontSize="12"
+                                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                                                <Button Content="批准" Tag="{Binding Item}" Click="ApproveButton_OnClick"/>
+                                                <Button Content="拒绝" Tag="{Binding Item}" Click="RejectButton_OnClick"/>
+                                            </StackPanel>
+                                        </Grid>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+            <Border BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="4" Padding="12">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="已批准的 FIFO 播放队列" FontSize="19" FontWeight="SemiBold"/>
+                    <TextBlock Text="队列按批准顺序播放；此处只包含低风险自动通过或人工批准的中风险内容。"
+                               FontSize="12" TextWrapping="Wrap"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                    <ItemsControl ItemsSource="{Binding PlaybackQueue}" IsVisible="{Binding HasPlayback}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                                        BorderThickness="1" CornerRadius="4" Padding="10" Margin="0,4">
+                                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                                        <Border Background="#22007A5A" CornerRadius="10" Padding="8,3" VerticalAlignment="Top">
+                                            <TextBlock Text="{Binding QueuePositionLabel}" FontWeight="Bold"/>
+                                        </Border>
+                                        <StackPanel Grid.Column="1" Spacing="3">
+                                            <TextBlock Text="{Binding DisplayContent}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                                            <TextBlock Text="{Binding DisplayAttribution}" TextWrapping="Wrap"
+                                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                                            <TextBlock Text="{Binding SourceLabel}" FontSize="12" TextWrapping="Wrap"
+                                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                                            <StackPanel Orientation="Horizontal" Spacing="12">
+                                                <TextBlock Text="{Binding RiskLabel}" FontSize="12"/>
+                                                <TextBlock Text="{Binding StateLabel}" FontSize="12"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+
+            <Border BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="4" Padding="12">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="最近审查历史" FontSize="19" FontWeight="SemiBold"/>
+                    <TextBlock Text="高风险和已拦截条目的正文、署名会统一显示为隐藏提示；供应商、上游 ID、风险原因与时间仍可用于审计。"
+                               FontSize="12" TextWrapping="Wrap"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                    <ItemsControl ItemsSource="{Binding History}" IsVisible="{Binding HasHistory}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                                        BorderThickness="1" CornerRadius="4" Padding="9" Margin="0,3">
+                                    <StackPanel Spacing="3">
+                                        <TextBlock Text="{Binding DisplayContent}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                                        <TextBlock Text="{Binding DisplayAttribution}" TextWrapping="Wrap"
+                                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                                        <StackPanel Orientation="Horizontal" Spacing="12">
+                                            <TextBlock Text="{Binding StateLabel}" FontWeight="SemiBold"/>
+                                            <TextBlock Text="{Binding RiskLabel}"/>
+                                            <TextBlock Text="{Binding ConfidenceLabel}"/>
+                                            <TextBlock Text="{Binding CategoryLabel}"
+                                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                                        </StackPanel>
+                                        <TextBlock Text="{Binding AiSummary}" TextWrapping="Wrap" FontSize="12"/>
+                                        <TextBlock Text="{Binding SourceLabel}" TextWrapping="Wrap" FontSize="12"
+                                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                                        <TextBlock Text="{Binding CreatedAtLabel}" FontSize="12"
+                                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</ci:SettingsPageBase>

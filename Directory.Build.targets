@@ -1,0 +1,7 @@
+<Project>
+  <!-- ClassIsland.PluginSdk.targets hard-codes `pwsh`. On Windows installations
+       that only have Windows PowerShell, use the available host for CIPX MD5. -->
+  <PropertyGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
+    <PowershellBinaryName Condition="'$(PowershellBinaryName)' == 'pwsh'">powershell.exe</PowershellBinaryName>
+  </PropertyGroup>
+</Project>
