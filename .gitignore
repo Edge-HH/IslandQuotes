@@ -6,3 +6,6 @@ cipx/
 *.user
 *.suo
 TestResults/
+
+# Mimosa hook runtime state
+.mimosa/
