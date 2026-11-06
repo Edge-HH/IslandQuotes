@@ -147,6 +147,9 @@ if ($null -ne $projectPath) {
     Assert-TextContains 'project targets net8.0-windows' $projectText '<TargetFramework>net8.0-windows</TargetFramework>'
     Assert-TextContains 'project assembly name is IslandQuotes' $projectText '<AssemblyName>IslandQuotes</AssemblyName>'
     Assert-TextContains 'project references ClassIsland.PluginSdk' $projectText 'ClassIsland.PluginSdk'
+    $projectVersion = [regex]::Match($projectText, '<Version>\s*([^<]+?)\s*</Version>').Groups[1].Value
+    $manifestVersion = if ($null -ne $manifestPath) { Get-ManifestField $manifestPath 'version' } else { '' }
+    Add-Check 'project Version matches manifest version' ($projectVersion -eq $manifestVersion) "csproj Version='$projectVersion', manifest version='$manifestVersion'"
     Assert-TextContains 'project copies manifest.yml' $projectText 'manifest.yml'
     Assert-TextContains 'project copies icon.png' $projectText 'icon.png'
 }
