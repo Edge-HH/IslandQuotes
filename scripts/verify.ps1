@@ -244,8 +244,9 @@ Assert-TextContains 'queue bounds AI concurrency' $queueText 'MaxConcurrentRevie
 Assert-TextContains 'queue enforces max buffered items' $queueText 'MaxBufferedItems'
 Assert-TextContains 'queue persists review-queue.json' $queueText 'review-queue.json'
 
-$lowPattern = 'case RiskLevel\.Low:\s*item\.State = ReviewItemState\.Approved;\s*decision = "auto_pass";'
-$mediumPattern = 'case RiskLevel\.Medium:\s*item\.State = ReviewItemState\.AwaitingManualReview;\s*decision = "manual_required";'
+# Low/Medium 分支内含严格/宽松档的子分支，故在同一 case 内（不跨越下一个 case）查找默认映射。
+$lowPattern = 'case RiskLevel\.Low:(?:(?!case RiskLevel\.).)*?item\.State = ReviewItemState\.Approved;\s*decision = "auto_pass";'
+$mediumPattern = 'case RiskLevel\.Medium:(?:(?!case RiskLevel\.).)*?item\.State = ReviewItemState\.AwaitingManualReview;\s*decision = "manual_required";'
 $highPattern = 'case RiskLevel\.High:\s*item\.State = ReviewItemState\.Blocked;\s*decision = "auto_block";'
 $failurePattern = 'else if \(!aiSucceeded\).*?ReviewFailureAction\.Block.*?ReviewItemState\.Blocked.*?ReviewItemState\.AwaitingManualReview.*?decision = "ai_failure";'
 Assert-TextMatches 'low risk maps to auto_pass' $queueText $lowPattern

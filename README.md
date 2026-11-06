@@ -131,7 +131,7 @@ dotnet build IslandQuotes.csproj -c Release -p:CreateCipx=true
 
 `IslandQuotes.cipx` 由 `ClassIsland.PluginSdk` 的 `CreateCipx` 目标打包 `bin\Release\net8.0-windows\` 生成。
 
-本仓库的 CI 在每次推送到 `main` / PR 时运行 `verify.ps1`（静态验收 + Release 构建 + CIPX 包内容检查）并上传 CIPX 产物；推送 `v*` 标签时自动构建并发布 GitHub Release。
+本仓库的 CI 在每次推送到 `main` / PR 时运行 `verify.ps1`（静态验收 + Release 构建 + CIPX 包内容检查）并上传 CIPX 产物；每次在 GitHub 上发布 Release 时，Release 工作流会为该 Release 的 tag 重新构建 `IslandQuotes.cipx`（及 `.sha256` 校验文件）并覆盖 Release 中的同名附件（也可在 Actions 中手动运行并填写 tag 来重新覆盖）。发布前请确保 `manifest.yml` 的 `version` 与 tag 一致（如 `1.0.0.0` 对应 `v1.0.0`）。
 
 ## 开发与验证
 
