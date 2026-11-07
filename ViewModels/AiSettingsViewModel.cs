@@ -18,8 +18,9 @@ public sealed class AiSettingsViewModel : ObservableObject
     ReviewFailureAction _failureAction = ReviewFailureAction.ManualReview;
     ReviewStrictness _strictness = ReviewStrictness.Balanced;
     string _systemPrompt = string.Empty;
-    int _maxConcurrentReviews = 3;
-    int _itemsPerReviewRequest = 5;
+    int _maxQueueLength = 5;
+    int _maxReviewAttempts = 5;
+    string _customTagText = string.Empty;
     int _refillThreshold = 1;
     int _maxHistoryItems = 500;
     int _requestTimeoutSeconds = 45;
@@ -148,9 +149,6 @@ public sealed class AiSettingsViewModel : ObservableObject
 
     public IReadOnlyList<LabeledValue<ReviewFailureAction>> FailureActionOptions { get; }
 
-    /// <summary>允许主题的可选项；与禁止主题互斥，同一标签只允许出现在一侧。</summary>
-    public ObservableCollection<TagOptionViewModel> AllowedTagOptions { get; } = [];
-
     /// <summary>禁止主题的可选项；选中即注入提示词并在本地强制拦截。</summary>
     public ObservableCollection<TagOptionViewModel> BlockedTagOptions { get; } = [];
 
@@ -190,17 +188,11 @@ public sealed class AiSettingsViewModel : ObservableObject
         _ => "均衡（默认）：低风险放行，中风险转人工复核，高风险直接拦截。"
     };
 
-    /// <summary>标签选择的摘要，随选择变化刷新。</summary>
-    public string TagSummary
+    /// <summary>自定义禁止主题的输入框文本。</summary>
+    public string CustomTagText
     {
-        get
-        {
-            int allowed = AllowedTagOptions.Count(option => option.IsSelected);
-            int blocked = BlockedTagOptions.Count(option => option.IsSelected);
-            return allowed == 0 && blocked == 0
-                ? "未选择任何主题标签；提示词只使用默认审查标准。"
-                : $"已选：允许 {allowed} 个主题，禁止 {blocked} 个主题。";
-        }
+        get => _customTagText;
+        set => SetProperty(ref _customTagText, value ?? string.Empty);
     }
 
     public AiProviderProfile? SelectedProfile
@@ -260,16 +252,17 @@ public sealed class AiSettingsViewModel : ObservableObject
             FailureAction = value.Value;
         }
     }
-    public int MaxConcurrentReviews
+    public int MaxQueueLength
     {
-        get => _maxConcurrentReviews;
-        set => SetProperty(ref _maxConcurrentReviews, Math.Clamp(value, 1, 10));
+        get => _maxQueueLength;
+        set => SetProperty(ref _maxQueueLength,
+            Math.Clamp(value, PluginSettingsStore.MinQueueLength, PluginSettingsStore.MaxQueueLengthLimit));
     }
 
-    public int ItemsPerReviewRequest
+    public int MaxReviewAttempts
     {
-        get => _itemsPerReviewRequest;
-        set => SetProperty(ref _itemsPerReviewRequest, Math.Clamp(value, 1, 10));
+        get => _maxReviewAttempts;
+        set => SetProperty(ref _maxReviewAttempts, Math.Clamp(value, 1, PluginSettingsStore.MaxReviewAttemptsLimit));
     }
 
     public int RefillThreshold
@@ -374,8 +367,8 @@ public sealed class AiSettingsViewModel : ObservableObject
                 : ReviewStrictness.Balanced;
             LoadTagOptions(_settings.Ai);
             FailureAction = _settings.Review.FailureAction;
-            MaxConcurrentReviews = _settings.Review.MaxConcurrentReviews;
-            ItemsPerReviewRequest = _settings.Review.ItemsPerReviewRequest;
+            MaxQueueLength = _settings.Review.MaxQueueLength;
+            MaxReviewAttempts = _settings.Review.MaxReviewAttempts;
             RefillThreshold = _settings.Review.RefillThreshold;
             MaxHistoryItems = _settings.Review.MaxHistoryItems;
             LogFullPrompts = _settings.Review.LogFullPrompts;
@@ -459,17 +452,13 @@ public sealed class AiSettingsViewModel : ObservableObject
             _settings.Ai.SystemPrompt = SystemPrompt ?? string.Empty;
             _settings.Ai.RequestTimeoutSeconds = Math.Clamp(RequestTimeoutSeconds, 5, 180);
             _settings.Ai.Strictness = Strictness;
-            _settings.Ai.AllowedTags = AllowedTagOptions
-                .Where(option => option.IsSelected)
-                .Select(option => option.Label)
-                .ToList();
             _settings.Ai.BlockedTags = BlockedTagOptions
                 .Where(option => option.IsSelected)
                 .Select(option => option.Label)
                 .ToList();
             _settings.Review.FailureAction = FailureAction;
-            _settings.Review.MaxConcurrentReviews = Math.Clamp(MaxConcurrentReviews, 1, 10);
-            _settings.Review.ItemsPerReviewRequest = Math.Clamp(ItemsPerReviewRequest, 1, 10);
+            _settings.Review.MaxQueueLength = MaxQueueLength;
+            _settings.Review.MaxReviewAttempts = MaxReviewAttempts;
             _settings.Review.RefillThreshold = Math.Clamp(RefillThreshold, 0, 100);
             _settings.Review.MaxHistoryItems = Math.Clamp(MaxHistoryItems, 10, 100000);
             _settings.Review.LogFullPrompts = LogFullPrompts;
@@ -580,48 +569,45 @@ public sealed class AiSettingsViewModel : ObservableObject
         }
     }
 
-    /// <summary>按内置目录重建主题选项；设置里存在但目录未收录的自定义标签会追加到末尾。</summary>
+    /// <summary>按内置目录重建禁止主题选项；设置里存在但目录未收录的自定义标签会追加到末尾。</summary>
     private void LoadTagOptions(AiSettings ai)
     {
-        var allowed = new HashSet<string>(ai.AllowedTags ?? [], StringComparer.OrdinalIgnoreCase);
         var blocked = new HashSet<string>(ai.BlockedTags ?? [], StringComparer.OrdinalIgnoreCase);
 
-        AllowedTagOptions.Clear();
         BlockedTagOptions.Clear();
-
         var labels = QuoteTagCatalog.Tags.Select(tag => tag.Label)
-            .Concat(allowed)
             .Concat(blocked)
             .Distinct(StringComparer.OrdinalIgnoreCase);
 
         foreach (string label in labels)
-        {
-            AllowedTagOptions.Add(new TagOptionViewModel(label, isSelected =>
-            {
-                if (isSelected) Deselect(BlockedTagOptions, label);
-                OnPropertyChanged(nameof(TagSummary));
-            })
-            {
-                IsSelected = allowed.Contains(label)
-            });
-            BlockedTagOptions.Add(new TagOptionViewModel(label, isSelected =>
-            {
-                if (isSelected) Deselect(AllowedTagOptions, label);
-                OnPropertyChanged(nameof(TagSummary));
-            })
-            {
-                IsSelected = blocked.Contains(label)
-            });
-        }
-
-        OnPropertyChanged(nameof(TagSummary));
+            BlockedTagOptions.Add(new TagOptionViewModel(label) { IsSelected = blocked.Contains(label) });
     }
 
-    private static void Deselect(ObservableCollection<TagOptionViewModel> options, string label)
+    /// <summary>把审查提示词恢复为默认审查规则（保存后生效）。</summary>
+    public void ResetReviewRules()
     {
-        TagOptionViewModel? counterpart = options.FirstOrDefault(option =>
+        SystemPrompt = AiProviderPresetCatalog.DefaultReviewRules;
+    }
+
+    /// <summary>把输入框中的文本加为禁止主题并选中；已存在时直接选中。</summary>
+    public void AddCustomTag()
+    {
+        string label = (CustomTagText ?? string.Empty).Trim();
+        if (label.Length == 0) return;
+        if (label.Length > 40)
+        {
+            StatusMessage = "主题名称不能超过 40 个字符。";
+            return;
+        }
+
+        TagOptionViewModel? existing = BlockedTagOptions.FirstOrDefault(option =>
             string.Equals(option.Label, label, StringComparison.OrdinalIgnoreCase));
-        if (counterpart is { IsSelected: true }) counterpart.IsSelected = false;
+        if (existing is null)
+            BlockedTagOptions.Add(new TagOptionViewModel(label) { IsSelected = true });
+        else
+            existing.IsSelected = true;
+
+        CustomTagText = string.Empty;
     }
 
     string Sanitize(string? value)
@@ -653,27 +639,16 @@ public sealed class LabeledValue<T>(T value, string label) where T : struct, Enu
     public override string ToString() => Label;
 }
 
-/// <summary>主题快速控制的单个选项；选中状态变化时回调视图模型做互斥清理与摘要刷新。</summary>
-public sealed class TagOptionViewModel : ObservableObject
+/// <summary>禁止主题的单个选项。</summary>
+public sealed class TagOptionViewModel(string label) : ObservableObject
 {
-    private readonly Action<bool> _onSelectionChanged;
     private bool _isSelected;
 
-    public TagOptionViewModel(string label, Action<bool> onSelectionChanged)
-    {
-        Label = label;
-        _onSelectionChanged = onSelectionChanged;
-    }
-
-    public string Label { get; }
+    public string Label { get; } = label;
 
     public bool IsSelected
     {
         get => _isSelected;
-        set
-        {
-            if (!SetProperty(ref _isSelected, value)) return;
-            _onSelectionChanged(value);
-        }
+        set => SetProperty(ref _isSelected, value);
     }
 }

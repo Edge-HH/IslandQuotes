@@ -8,6 +8,9 @@ public sealed class CustomQuoteProvider : IQuoteProvider
     readonly CustomQuoteSource _source;
     readonly object _sync = new();
 
+    /// <summary>顺序播放取出顺序的全局序号；来源实例每次刷新都会重建，因此不能放在实例上。</summary>
+    static long s_sequence;
+
     public CustomQuoteProvider(CustomQuoteSource source)
     {
         _source = source ?? throw new ArgumentNullException(nameof(source));
@@ -26,6 +29,9 @@ public sealed class CustomQuoteProvider : IQuoteProvider
     // 用户自己编写的内容默认不送 AI 审查，可在来源设置中开启。
     public bool IsAiReviewEnabledByDefault => false;
 
+    /// <summary>顺序播放需要按来源顺序取内容，不能并行抓取。</summary>
+    public bool RequiresSequentialFetch => _source.PlayMode == CustomQuotePlayMode.Sequential;
+
     public Task<QuoteContent> FetchAsync(
         QuoteProviderConfig config,
         int lengthLimitation,
@@ -34,6 +40,7 @@ public sealed class CustomQuoteProvider : IQuoteProvider
         cancellationToken.ThrowIfCancellationRequested();
 
         string content;
+        long sequence = 0;
         lock (_sync)
         {
             IReadOnlyList<string> entries = _source.GetEntries();
@@ -49,6 +56,7 @@ public sealed class CustomQuoteProvider : IQuoteProvider
                 int index = _source.NextIndex % entries.Count;
                 content = entries[index];
                 _source.NextIndex = (index + 1) % entries.Count;
+                sequence = Interlocked.Increment(ref s_sequence);
             }
         }
 
@@ -58,7 +66,8 @@ public sealed class CustomQuoteProvider : IQuoteProvider
             ProviderId = Id,
             ProviderName = DisplayName,
             RequestMethod = "LOCAL",
-            RequestUrl = string.Empty
+            RequestUrl = string.Empty,
+            SourceSequence = sequence
         });
     }
 }

@@ -384,3 +384,18 @@ Free limit reached: 1 reply every 45 seconds per IP. Retry after 14s
 - headless 核心服务测试：本地 36/36；四个 live quote providers 56/56；四来源+live AI 综合 60/60。
 
 未执行 GUI/CIPX 导入实测，且公共端点存在已记录的限流和隐私风险。这些限制不阻止构建产物交付，但发布前应完成真实宿主手动验收。除第 10 节列出的文档/发布元数据和未执行 UI 验证外，未发现会阻断本地构建、CIPX 生成或静态验收的功能缺陷。
+
+## 12. 2026-11-07 队列/刷新回归（本机实测）
+
+本轮针对「无 AI 审查时短刷新间隔仍卡住」的队列/刷新改动做了实际验证：
+
+- Debug / Release 构建：0 警告、0 错误。
+- `scripts/verify.ps1 -Configuration Release`（含 Release 构建 + CIPX 打包）：148 passed，0 failed，1 warning（仅未执行真实 AI 连通性测试）。
+- 临时 headless 队列 harness（引用 `IslandQuotes.csproj`，位于系统临时目录，未提交）：
+  - 15/15 通过；
+  - 直通（来源关闭 AI 审查）批次实际加入 10 条，超过用户设置的最大队列 5；
+  - 出队、当前展示记录、退回播放队列、从历史移除、清除当前展示均通过；
+  - 连续 8 轮出队/补货均取得内容，无空转；
+  - 混合配置（直通来源 + 需 AI 审查来源，且 AI 供应商未配置）下：直通内容正常进入播放队列，AI 失败条目进入待人工复核，下一次出队不卡住。
+- 未执行：ClassIsland 宿主内 GUI 导入、设置页实际渲染、动画/滚动视觉效果。这些仍需在真实宿主中手动验看。
+

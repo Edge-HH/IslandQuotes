@@ -35,9 +35,10 @@ public sealed class Plugin : PluginBase
 
         services.AddComponent<QuoteAiComponent, QuoteAiSettings>();
 
-        services.AddSettingsPageGroup("islandquotes", "\uE21D", "IslandQuotes")
+        services.AddSettingsPageGroup("islandquotes", "\uF307", "IslandQuotes")
             .AddSettingsPage<AiSettingsPage>()
-            .AddSettingsPage<ReviewQueuePage>();
+            .AddSettingsPage<ReviewQueuePage>()
+            .AddSettingsPage<ReviewHistoryPage>();
 
         AppBase.Current.AppStopping += (_, _) =>
         {

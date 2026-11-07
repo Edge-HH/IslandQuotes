@@ -1,4 +1,12 @@
-﻿<ci:ComponentBase x:Class="IslandQuotes.Components.QuoteAi.QuoteAiComponent"
+﻿<!--
+  IslandQuotes - Copyright (C) 2026 Edge-HH
+  本文件改编自 ExtraIsland（https://github.com/LiPolymer/ExtraIsland），
+  Copyright (C) 2024-2025 LiPolymer，以 GNU AGPLv3 授权。
+  原始文件：ExtraIsland/Components/Rhesis/Rhesis.axaml
+  修改：2026 年由 Edge-HH 修改，详见 NOTICE.md 与 git 历史。
+  SPDX-License-Identifier: AGPL-3.0-only
+-->
+<ci:ComponentBase x:Class="IslandQuotes.Components.QuoteAi.QuoteAiComponent"
                   x:TypeArguments="local:QuoteAiConfig"
                   xmlns="https://github.com/avaloniaui"
                   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -11,22 +19,35 @@
                   DetachedFromVisualTree="OnDetachedFromVisualTree">
     <Grid ClipToBounds="True">
         <StackPanel Orientation="Horizontal">
-            <Label x:Name="MainLabel"
-                   VerticalAlignment="Center"
-                   FontSize="{DynamicResource MainWindowLargeFontSize}"
-                   Content="等待经 AI 审查的内容…">
-                <Label.RenderTransform>
-                    <TranslateTransform />
-                </Label.RenderTransform>
-            </Label>
-            <Label x:Name="SubLabel"
-                   IsVisible="False"
-                   VerticalAlignment="Center"
-                   FontSize="{DynamicResource MainWindowEmphasizedFontSize}">
-                <Label.RenderTransform>
-                    <TranslateTransform />
-                </Label.RenderTransform>
-            </Label>
+            <!-- 裁剪必须放在不参与平移的父容器上；Label 自身只负责滚动/翻页位移。 -->
+            <Grid x:Name="MainViewport"
+                  ClipToBounds="True"
+                  HorizontalAlignment="Left"
+                  VerticalAlignment="Center">
+                <Label x:Name="MainLabel"
+                       HorizontalAlignment="Left"
+                       VerticalAlignment="Center"
+                       FontSize="{DynamicResource MainWindowLargeFontSize}"
+                       Content="等待经 AI 审查的内容…">
+                    <Label.RenderTransform>
+                        <TranslateTransform />
+                    </Label.RenderTransform>
+                </Label>
+            </Grid>
+            <Grid x:Name="SubViewport"
+                  IsVisible="False"
+                  ClipToBounds="True"
+                  HorizontalAlignment="Left"
+                  VerticalAlignment="Center">
+                <Label x:Name="SubLabel"
+                       HorizontalAlignment="Left"
+                       VerticalAlignment="Center"
+                       FontSize="{DynamicResource MainWindowEmphasizedFontSize}">
+                    <Label.RenderTransform>
+                        <TranslateTransform />
+                    </Label.RenderTransform>
+                </Label>
+            </Grid>
         </StackPanel>
     </Grid>
 </ci:ComponentBase>

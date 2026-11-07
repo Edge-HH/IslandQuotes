@@ -4,30 +4,25 @@
 [![Release](https://github.com/Edge-HH/IslandQuotes/actions/workflows/release.yml/badge.svg)](https://github.com/Edge-HH/IslandQuotes/actions/workflows/release.yml)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE.txt)
 
-IslandQuotes 是一个面向 **ClassIsland v2** 的每日一言插件。它在名句真正显示到班级大屏之前，先调用所选的 AI 供应商做内容风险审查：只有低风险内容自动通过，中风险内容进入人工复核，高风险内容自动拦截。
+IslandQuotes 是一个ClassIsland的每日一言插件。
 
-> 插件 ID：`ink.islandquotes.quoteai`
-> 入口程序集：`IslandQuotes.dll`
-> 目标框架：.NET 8（`net8.0-windows`）
-> 宿主要求：ClassIsland **2.1.0.1 或更新版本**（插件 API `2.0.0.0`，以 ClassIsland.PluginSdk `2.1.0.1` 构建）
+[可选审查]它在显示正文前会先调用所选 AI 进行风险审查，拦截不合适的内容；还支持更多富文本功能和切换动画。
 
-## 功能一览
+## 功能
 
-| 能力 | 行为 |
+| 功能 | 说明 |
 | --- | --- |
-| 可选的预展示 AI 审查 | 在组件设置的每个内容来源中可单独开关「对该来源启用 AI 审查」（内置来源默认开启，自定义来源默认关闭）。开启后该来源的内容进入组件显示之前先审查，不会先把未审查内容显示出来；关闭后只应用本地排除词，其余直接播放（审计决策 `review_disabled`）。 |
-| 低风险自动通过 | `RiskLevel.Low` → 自动加入播放队列，按批准顺序播放。 |
-| 中风险统一人工复核 | `RiskLevel.Medium` → 进入「人工复核与播放队列」页面，必须由人工批准后才可播放。 |
-| 高风险自动拦截 | `RiskLevel.High` → 直接进入拦截历史，不进入人工可批准队列，正文与署名在复核页隐藏。 |
-| AI 失败时关闭（fail-closed） | 超时、限流、无效 JSON、未知风险等都不会自动放行。默认「转人工复核」，也可设为「直接拦截」。 |
-| 批量抓取与并发审查 | 播放队列为空时抓取一批候选（默认 3 条，缓冲上限 12 条），并按最大并发数审查。 |
-| 自定义来源 | 点击「内容来源」标题右侧的添加按钮新增自定义来源：每行一条内容，可选顺序播放（记忆上次播放位置）或随机播放，也可从本地 txt 导入。 |
-| FIFO 播放队列 | 低风险自动通过和中风险人工批准都追加到队尾；显示时从队首取出，保证先进先出。 |
-| 本地忽略词 | 命中组件设置中的忽略词时直接按高风险拦截并记录 `local_ignore`，即使 AI 返回低风险也不放行。 |
-| 提示词快速控制 | AI 设置页可选择判断严格程度（严格/均衡/宽松，影响提示词尺度与本地过滤力度），并勾选允许/禁止的主题标签（如热梗、爱情、励志）；禁止主题由本地强制拦截（`blocked_tag`），允许主题仅作为提示词偏好。 |
-| 多供应商预设 | 默认「OpenAI 兼容」，另含主流官方供应商与本地 Ollama 预设，覆盖 OpenAI/Anthropic/Gemini 三类协议。 |
-| 审计日志 | 每日 UTF-8 JSONL，记录请求、审查、决策、人工复核、播放和队列恢复事件。 |
-| 状态持久化 | 待复核、已批准队列与历史写入 `review-queue.json`；重启后不把未审查内容当低风险播放。 |
+| 内容来源 | 内置多个名句来源，可添加自定义来源（每行一条，可从 txt 导入，顺序或随机播放），按概率权重选取。 |
+| AI 审查（可选） | 每个来源可单独开关「对该来源启用 AI 审查」；内置来源默认开启，自定义来源默认关闭。 |
+| 风险分级 | 低风险自动进入播放队列，中风险进入「待人工复核」，高风险直接拦截。 |
+| 审查失败不放行 | 「AI 审查失败时」可选「转人工复核」或「直接拦截」。 |
+| 提示词快速控制 | 「判断严格程度」可选严格 / 均衡 / 宽松，并可设置「禁止的主题」。 |
+| 排除列表 | 包含列表中字符串的内容直接拦截。 |
+| 播放队列 | 按批准顺序先进先出；队列快空时自动在后台补充，也可「立即补货」。 |
+| 历史记录 | 查看人工拒绝、拦截和已播放的内容，可按风险、状态和关键词筛选。 |
+| 显示样式 | 七种切换动画、文字样式、作者与出处展示、长内容滚动。 |
+| 供应商 | 「第三方模型提供商」（OpenAI、DeepSeek、Gemini、Claude、Ollama 等）或「自定义模型 API」。 |
+| 审计日志 | 记录审查、拦截、人工复核和播放事件，密钥会被脱敏。 |
 
 ### 风险决策
 
@@ -42,7 +37,7 @@ IslandQuotes 是一个面向 **ClassIsland v2** 的每日一言插件。它在�
         │          └─ 其余 ──────────→ 自动通过 → FIFO 播放队列
         ├─ Medium ── 宽松档 ─────────→ 自动通过（auto_pass_relaxed）
         │          └─ 其余 ──────────→ 等待人工复核
-        ├─ High   ───────────────────→ 自动拦截（内容隐藏）
+        ├─ High   ───────────────────→ 自动拦截
         └─ 失败/未知 ── 默认 ────────→ 等待人工复核
                         或配置为 ────→ 直接拦截
 ```
@@ -50,6 +45,10 @@ IslandQuotes 是一个面向 **ClassIsland v2** 的每日一言插件。它在�
 注意：人工复核只能批准 `Medium`、失败/未知状态的项目；高风险项目不会出现在待复核列表中。严格档下的低风险条目会提升为 medium 后转人工，保证可被批准。AI 分类不是内容安全的绝对保证，发布者仍需承担最终审核责任。
 
 审计中的自动决策名称固定为 `auto_pass`、`auto_pass_relaxed`、`manual_required`、`manual_required_strict`、`auto_block`、`ai_failure`、`local_ignore`、`blocked_tag`；人工动作写入 `manual_review`。
+> 插件 ID：`ink.islandquotes.quoteai`
+> 入口程序集：`IslandQuotes.dll`
+> 目标框架：.NET 8（`net8.0-windows`）
+> 宿主要求：ClassIsland **2.1.0.1 或更新版本**（插件 API `2.0.0.0`，以 ClassIsland.PluginSdk `2.1.0.1` 构建；同一安装包兼容 Avalonia 12 的 2.1.1.1 及以上）
 
 ## 安装
 
@@ -83,9 +82,9 @@ IslandQuotes 是一个面向 **ClassIsland v2** 的每日一言插件。它在�
 
 - **待复核**：中风险、AI 失败但采用「转人工复核」策略的项目。可单条或批量「批准/拒绝」。
 - **播放队列**：自动通过或人工批准的条目按加入顺序追加到队尾；显示时才从队首取出（FIFO）。拒绝的项目永不播放。
-- **历史**：人工拒绝、高风险拦截和已播放内容。高风险/已拦截条目的正文与署名统一显示为「高风险内容已隐藏」，供应商和上游 ID 仍保留用于审计。
+- **历史记录**：独立的设置页，列出人工拒绝、高风险拦截和已播放内容，可按风险、状态与关键词筛选；风险等级按颜色区分（低风险绿、中风险黄、高风险红，未开启审查的来源显示灰色「未开启」）。
 
-队列状态会持久化；重启后已批准条目回到播放队列，审查中/待审查条目转为人工复核，绝不自动视为低风险。批量抓取、缓冲上限与 FIFO 完整语义见[用户指南](docs/USER_GUIDE.md)。
+队列状态会持久化；重启后已批准条目回到播放队列，审查中/待审查条目转为人工复核，绝不自动视为低风险。队列补充策略与 FIFO 完整语义见[用户指南](docs/USER_GUIDE.md)。
 
 ## 审计日志
 
@@ -159,10 +158,16 @@ dotnet build IslandQuotes.csproj -c Release -p:CreateCipx=true
 
 ## 来源与致谢
 
-本项目把 [ExtraIsland](https://github.com/Lipoly/ExtraIsland) 中的「名句一言」组件提取、重构为独立插件，并新增 AI 预展示审查、人工复核、FIFO 播放队列和审计能力。本仓库的界面、文案、队列服务和图标均为重新实现；`icon.png` 为原创盾牌/引号/星光图形，没有复用 ExtraIsland 的图片素材。
+本项目基于 [ExtraIsland](https://github.com/LiPolymer/ExtraIsland)（Copyright (C) 2024-2025 LiPolymer，AGPL-3.0）中的「名句一言」组件改编：名句来源实现、组件及其设置界面的部分代码与文案沿用自 ExtraIsland，并经过修改；在此基础上新增了 AI 预展示审查、人工复核、FIFO 播放队列、自定义来源和审计日志。改编文件清单与修改说明见 [`NOTICE.md`](NOTICE.md)，各改编文件头部也标注了原始出处。
+
+AI 审查、复核队列、审计日志、设置页等其余代码为本项目原创；`icon.png` / `icon.svg` 为原创图形，未使用 ExtraIsland 的图片素材。IslandQuotes 是独立项目，与 ExtraIsland 及其作者没有隶属或背书关系。
+
+感谢 LiPolymer 和 ExtraIsland 的贡献者。
 
 ## 许可 / License
 
-本项目以 **GNU Affero General Public License v3.0（AGPL-3.0）** 分发，完整文本见 [`LICENSE.txt`](LICENSE.txt)，并随插件输出和 CIPX 包一起分发。名句文本、AI 模型输出及各供应商服务受对应第三方条款约束；本插件不对第三方内容的准确性、合法性或持续可用性作担保。
+Copyright (C) 2026 Edge-HH。部分代码 Copyright (C) 2024-2025 LiPolymer（ExtraIsland）。
 
-This project is distributed under the **GNU Affero General Public License v3.0**; the full text is in [`LICENSE.txt`](LICENSE.txt). The extracted and refactored quote-component/provider portions are derived from [ExtraIsland](https://github.com/Lipoly/ExtraIsland) by LiPolymer, which is also licensed under AGPLv3. Original IslandQuotes UI/service code and icon are provided under the same license. Quote texts, AI model outputs and third-party API services remain subject to their own terms.
+本项目以 **GNU Affero General Public License v3.0（AGPL-3.0）** 分发，完整文本见 [`LICENSE.txt`](LICENSE.txt)，第三方代码声明见 [`NOTICE.md`](NOTICE.md)，两者均随插件输出和 CIPX 包一起分发。分发本插件或其修改版时，须按 AGPL-3.0 一并提供对应源代码。名句文本、AI 模型输出及各供应商服务受对应第三方条款约束；本插件不对第三方内容的准确性、合法性或持续可用性作担保。
+
+This project is distributed under the **GNU Affero General Public License v3.0**; the full text is in [`LICENSE.txt`](LICENSE.txt). Portions of the quote component, its settings UI and the quote providers are adapted from [ExtraIsland](https://github.com/LiPolymer/ExtraIsland), Copyright (C) 2024-2025 LiPolymer, licensed under AGPLv3, and have been modified; see [`NOTICE.md`](NOTICE.md) for the list of adapted files. All other IslandQuotes code and the icon are original and provided under the same license. Quote texts, AI model outputs and third-party API services remain subject to their own terms.

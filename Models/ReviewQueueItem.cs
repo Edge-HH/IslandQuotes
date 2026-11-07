@@ -81,14 +81,22 @@ public sealed class ReviewQueueItem : ObservableObject
         set => SetProperty(ref _aiRequestId, value);
     }
 
+    // 以下完整请求体/提示词/原始响应只用于本次运行的诊断，且审计日志已单独落盘；
+    // 不写入 review-queue.json，避免每次展示都序列化数 MB 的历史数据。
+    [JsonIgnore]
     public string AiRawResponse
     {
         get => _aiRawResponse;
         set => SetProperty(ref _aiRawResponse, value);
     }
 
+    [JsonIgnore]
     public string AiRequestBodyJson { get; set; } = string.Empty;
+
+    [JsonIgnore]
     public string AiSystemPrompt { get; set; } = string.Empty;
+
+    [JsonIgnore]
     public string AiUserPrompt { get; set; } = string.Empty;
 
     public ReviewItemState State
@@ -226,6 +234,10 @@ public sealed class ReviewQueueItem : ObservableObject
 public sealed class ReviewQueueSnapshot
 {
     public int Version { get; set; } = 1;
+
+    /// <summary>采集顺序号；用于并发写入时只让较新的采集结果落盘。</summary>
+    public long Sequence { get; set; }
+
     public List<ReviewQueueItem> Items { get; set; } = [];
     public DateTimeOffset SavedAt { get; set; } = DateTimeOffset.Now;
 }

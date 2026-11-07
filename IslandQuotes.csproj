@@ -12,8 +12,14 @@
     <LangVersion>latest</LangVersion>
     <AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault>
     <PowershellBinaryName>powershell.exe</PowershellBinaryName>
-    <!-- Components are instantiated through ClassIsland DI, not Avalonia's runtime XAML loader. -->
-    <NoWarn>$(NoWarn);AVLN3001</NoWarn>
+    <!--
+      向上兼容：不在构建期编译 XAML。构建期编译的 XAML 会把 Avalonia 内部方法签名写死进插件，
+      ClassIsland 2.1.1.1 起宿主换成 Avalonia 12 后会抛 MissingMethodException。
+      .axaml 改为嵌入资源，由 Core/RuntimeXaml.cs 在运行时用宿主自带的 XAML 编译器加载。
+      插件仍以最低支持版本（SDK 2.1.0.1 / Avalonia 11）的 API 构建，以便在新旧宿主上都能解析程序集。
+    -->
+    <EnableAvaloniaXamlCompilation>false</EnableAvaloniaXamlCompilation>
+    <AvaloniaNameGeneratorIsEnabled>false</AvaloniaNameGeneratorIsEnabled>
   </PropertyGroup>
 
   <ItemGroup>
@@ -23,10 +29,18 @@
   </ItemGroup>
 
   <ItemGroup>
+    <AvaloniaXaml Remove="@(AvaloniaXaml)" />
+    <EmbeddedResource Include="**\*.axaml" Exclude="bin\**;obj\**" />
+  </ItemGroup>
+
+  <ItemGroup>
     <None Update="manifest.yml">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Update="LICENSE.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="NOTICE.md">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Update="README.md">

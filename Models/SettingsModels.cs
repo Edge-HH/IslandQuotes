@@ -68,6 +68,13 @@ public sealed class QuoteContent
     public string RequestUrl { get; set; } = string.Empty;
     public DateTimeOffset FetchedAt { get; set; } = DateTimeOffset.Now;
 
+    /// <summary>
+    /// 顺序播放来源取出内容时的全局递增序号（0 表示无顺序要求）；
+    /// 并发抓取完成先后不定，入队时据此恢复同一来源内的顺序。仅在本次运行内有意义，不持久化。
+    /// </summary>
+    [JsonIgnore]
+    public long SourceSequence { get; set; }
+
     [JsonIgnore]
     public string Attribution
     {
@@ -144,19 +151,20 @@ public sealed class AiSettings
     /// <summary>判断严格程度；写入提示词并影响审查决策的过滤力度。</summary>
     public ReviewStrictness Strictness { get; set; } = ReviewStrictness.Balanced;
 
-    /// <summary>允许的主题标签（快速控制）：提示词中倾向展示，不能压过安全边界。</summary>
-    public List<string> AllowedTags { get; set; } = [];
-
-    /// <summary>禁止的主题标签（快速控制）：命中即拦截，本地强制执行。</summary>
+    /// <summary>禁止的主题标签：提示词要求命中即判高风险，本地也会强制拦截；可包含自定义标签。</summary>
     public List<string> BlockedTags { get; set; } = [];
+
+    /// <summary>审查规则提示词的格式版本；用于把旧版（含 JSON 输出要求的）完整系统提示词迁移为仅含审查规则。</summary>
+    public int PromptVersion { get; set; }
 }
 
 public sealed class ReviewSettings
 {
-    public int MaxConcurrentReviews { get; set; } = 3;
+    /// <summary>播放队列的最大长度；队列低于提前审查阈值时，一次请求审查「最大长度 - 当前长度」条，使队列保持满载。</summary>
+    public int MaxQueueLength { get; set; } = 5;
 
-    /// <summary>单次 AI 请求合并审查的条数；多条共用一份系统提示词，设为 1 时逐条请求。</summary>
-    public int ItemsPerReviewRequest { get; set; } = 5;
+    /// <summary>AI 审查出错时的最大尝试次数（含首次）；仅对出错的条目重试。</summary>
+    public int MaxReviewAttempts { get; set; } = 5;
 
     /// <summary>播放队列剩余条数不高于此值时，在后台提前抓取并审查下一批内容；设为 0 时仅在队列耗尽后才补充。</summary>
     public int RefillThreshold { get; set; } = 1;
@@ -198,8 +206,6 @@ public sealed class QuoteRequestOptions
     public IReadOnlyDictionary<string, QuoteProviderConfig> ProviderSettings { get; init; }
         = new Dictionary<string, QuoteProviderConfig>(StringComparer.OrdinalIgnoreCase);
     public int LengthLimitation { get; init; }
-    public int BatchSize { get; init; } = 3;
-    public int MaxBufferedItems { get; init; } = 12;
     public IReadOnlyList<string> IgnoreTerms { get; init; } = [];
     public string RefreshSessionId { get; init; } = Guid.NewGuid().ToString("N");
 

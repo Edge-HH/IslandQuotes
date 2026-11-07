@@ -1,6 +1,8 @@
 ﻿using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
+using Avalonia.Media;
+using Avalonia.Media.Immutable;
 using Avalonia.Threading;
 using IslandQuotes.Core;
 using IslandQuotes.Models;
@@ -19,13 +21,9 @@ public sealed class ReviewQueueViewModel : ObservableObject
     int _queuedCount;
     int _blockedCount;
     bool _isAvailable;
+    bool _refreshingNow;
     string _queueStatusMessage = string.Empty;
     string _actionStatusMessage = string.Empty;
-    ReviewQueueItem[] _historySnapshot = [];
-    int _historyPageIndex;
-
-    /// <summary>审查历史每页显示的条数。</summary>
-    public const int HistoryPageSize = 10;
 
     public ReviewQueueViewModel()
     {
@@ -36,7 +34,20 @@ public sealed class ReviewQueueViewModel : ObservableObject
 
     public ObservableCollection<ReviewQueueRowViewModel> PlaybackQueue { get; } = [];
 
-    public ObservableCollection<ReviewQueueRowViewModel> History { get; } = [];
+    ReviewQueueRowViewModel? _currentDisplay;
+
+    /// <summary>主界面当前正在展示的内容（最近一次出队项）。</summary>
+    public ReviewQueueRowViewModel? CurrentDisplay
+    {
+        get => _currentDisplay;
+        private set
+        {
+            if (!SetProperty(ref _currentDisplay, value)) return;
+            OnPropertyChanged(nameof(HasCurrentDisplay));
+        }
+    }
+
+    public bool HasCurrentDisplay => CurrentDisplay is not null;
 
     public int PendingCount
     {
@@ -44,7 +55,7 @@ public sealed class ReviewQueueViewModel : ObservableObject
         private set
         {
             if (!SetProperty(ref _pendingCount, value)) return;
-            OnPropertyChanged(nameof(HasPending));
+            OnPropertiesChanged(nameof(HasPending), nameof(HasNoPending));
         }
     }
 
@@ -54,7 +65,7 @@ public sealed class ReviewQueueViewModel : ObservableObject
         private set
         {
             if (!SetProperty(ref _queuedCount, value)) return;
-            OnPropertyChanged(nameof(HasPlayback));
+            OnPropertiesChanged(nameof(HasPlayback), nameof(HasNoPlayback));
         }
     }
 
@@ -67,26 +78,32 @@ public sealed class ReviewQueueViewModel : ObservableObject
     public bool IsAvailable
     {
         get => _isAvailable;
-        private set => SetProperty(ref _isAvailable, value);
+        private set
+        {
+            if (!SetProperty(ref _isAvailable, value)) return;
+            OnPropertyChanged(nameof(CanRefreshNow));
+        }
     }
+
+    public bool IsRefreshingNow
+    {
+        get => _refreshingNow;
+        private set
+        {
+            if (!SetProperty(ref _refreshingNow, value)) return;
+            OnPropertyChanged(nameof(CanRefreshNow));
+        }
+    }
+
+    public bool CanRefreshNow => IsAvailable && !IsRefreshingNow;
 
     public bool HasPending => PendingCount > 0;
 
+    public bool HasNoPending => PendingCount <= 0;
+
     public bool HasPlayback => QueuedCount > 0;
 
-    public bool HasHistory => History.Count > 0;
-
-    public int HistoryTotalCount => _historySnapshot.Length;
-
-    public int HistoryPageCount => Math.Max(1, (_historySnapshot.Length + HistoryPageSize - 1) / HistoryPageSize);
-
-    public bool HasMultipleHistoryPages => HistoryPageCount > 1;
-
-    public bool CanGoToPreviousHistoryPage => _historyPageIndex > 0;
-
-    public bool CanGoToNextHistoryPage => _historyPageIndex < HistoryPageCount - 1;
-
-    public string HistoryPageLabel => $"第 {_historyPageIndex + 1} / {HistoryPageCount} 页，共 {HistoryTotalCount} 条";
+    public bool HasNoPlayback => QueuedCount <= 0;
 
     public string LastStatusMessage
     {
@@ -115,11 +132,12 @@ public sealed class ReviewQueueViewModel : ObservableObject
         _queue = null;
     }
 
-    /// <summary>手动刷新统计和三个 ObservableCollection 的界面快照。</summary>
-    public void Refresh()
+    /// <summary>手动刷新统计和集合快照；队列事件刷新时清除一次性操作提示，让实时状态重新可见。</summary>
+    public void Refresh(bool clearActionStatus = false)
     {
         try
         {
+            if (clearActionStatus) _actionStatusMessage = string.Empty;
             EnsureQueueBound();
             if (_queue is null)
             {
@@ -136,9 +154,11 @@ public sealed class ReviewQueueViewModel : ObservableObject
 
             ReplaceRows(PendingManualReview, _queue.PendingManualReview, playback: false);
             ReplaceRows(PlaybackQueue, _queue.PlaybackQueue, playback: true);
-            // 服务端按决定顺序追加历史，倒序后即为新的在前。
-            _historySnapshot = _queue.History.Reverse().ToArray();
-            ShowHistoryPage(_historyPageIndex);
+
+            CurrentDisplay = _queue.CurrentDisplayItem is { } current
+                             && !string.IsNullOrWhiteSpace(current.Quote?.Content)
+                ? new ReviewQueueRowViewModel(current)
+                : null;
 
             LastStatusMessage = SanitizeStatus(_queue.LastStatusMessage);
             OnPropertyChanged(nameof(StatusMessage));
@@ -158,7 +178,9 @@ public sealed class ReviewQueueViewModel : ObservableObject
             EnsureQueueBound();
             _queue?.Approve(item);
             Refresh();
-            SetActionStatus("已批准选中的待复核内容，并加入 FIFO 播放队列。");
+            SetActionStatus(item.State == ReviewItemState.Approved
+                ? "已批准该内容，并加入 FIFO 播放队列。"
+                : "该条目状态已变化，未执行批准。");
         }
         catch
         {
@@ -174,7 +196,9 @@ public sealed class ReviewQueueViewModel : ObservableObject
             EnsureQueueBound();
             _queue?.Reject(item);
             Refresh();
-            SetActionStatus(string.Empty);
+            SetActionStatus(item.State == ReviewItemState.Rejected
+                ? "已拒绝该内容。"
+                : "该条目状态已变化，未执行拒绝。");
         }
         catch
         {
@@ -189,7 +213,9 @@ public sealed class ReviewQueueViewModel : ObservableObject
             EnsureQueueBound();
             int count = _queue?.ApproveAllPending("全量人工批准") ?? 0;
             Refresh();
-            SetActionStatus($"已批准全部待复核内容，共 {count} 条。");
+            SetActionStatus(count > 0
+                ? $"已批准全部待复核内容，共 {count} 条。"
+                : "没有可批准的内容或状态已变化。");
         }
         catch
         {
@@ -202,9 +228,9 @@ public sealed class ReviewQueueViewModel : ObservableObject
         try
         {
             EnsureQueueBound();
-            _queue?.RejectAllPending("全量人工拒绝");
+            int count = _queue?.RejectAllPending("全量人工拒绝") ?? 0;
             Refresh();
-            SetActionStatus(string.Empty);
+            SetActionStatus(count > 0 ? $"已拒绝全部待复核内容，共 {count} 条。" : "没有可拒绝的内容或状态已变化。");
         }
         catch
         {
@@ -229,7 +255,7 @@ public sealed class ReviewQueueViewModel : ObservableObject
 
             int count = _queue?.ApproveSelected(selected, "批量人工批准") ?? 0;
             Refresh();
-            SetActionStatus($"已批准选中内容，共 {count} 条。");
+            SetActionStatus(count > 0 ? $"已批准选中内容，共 {count} 条。" : "没有可批准的内容或状态已变化。");
         }
         catch
         {
@@ -252,34 +278,50 @@ public sealed class ReviewQueueViewModel : ObservableObject
                 return;
             }
 
-            _queue?.RejectSelected(selected, "批量人工拒绝");
+            int count = _queue?.RejectSelected(selected, "批量人工拒绝") ?? 0;
             Refresh();
-            SetActionStatus(string.Empty);
+            SetActionStatus(count > 0 ? $"已拒绝选中内容，共 {count} 条。" : "没有可拒绝的内容或状态已变化。");
         }
         catch
         {
             SetActionStatus("拒绝选中内容失败。请刷新队列后重试。");
         }
     }
-    public void GoToPreviousHistoryPage() => ShowHistoryPage(_historyPageIndex - 1);
-
-    public void GoToNextHistoryPage() => ShowHistoryPage(_historyPageIndex + 1);
-
-    void ShowHistoryPage(int pageIndex)
+    /// <summary>手动立即补充队列；使用最近一次组件刷新时的设置快照。</summary>
+    public async Task RefreshNowAsync()
     {
-        _historyPageIndex = Math.Clamp(pageIndex, 0, HistoryPageCount - 1);
-        ReplaceRows(
-            History,
-            _historySnapshot.Skip(_historyPageIndex * HistoryPageSize).Take(HistoryPageSize),
-            playback: false);
+        if (IsRefreshingNow) return;
+        IsRefreshingNow = true;
+        try
+        {
+            EnsureQueueBound();
+            if (_queue is null)
+            {
+                SetActionStatus("人工复核队列尚未初始化。请启用插件后重试。");
+                return;
+            }
 
-        OnPropertyChanged(nameof(HasHistory));
-        OnPropertyChanged(nameof(HistoryTotalCount));
-        OnPropertyChanged(nameof(HistoryPageCount));
-        OnPropertyChanged(nameof(HasMultipleHistoryPages));
-        OnPropertyChanged(nameof(CanGoToPreviousHistoryPage));
-        OnPropertyChanged(nameof(CanGoToNextHistoryPage));
-        OnPropertyChanged(nameof(HistoryPageLabel));
+            if (_queue.IsRefilling)
+            {
+                SetActionStatus("正在补货，请稍候…");
+                return;
+            }
+
+            SetActionStatus("正在补充队列…");
+            int added = await _queue.RefreshNowAsync();
+            Refresh();
+            SetActionStatus(added > 0
+                ? $"已补充 {added} 条内容。"
+                : "本次补货没有新增内容，请查看队列状态或审计日志。");
+        }
+        catch
+        {
+            SetActionStatus("立即补货失败。请稍后重试。");
+        }
+        finally
+        {
+            IsRefreshingNow = false;
+        }
     }
 
     void EnsureQueueBound()
@@ -298,7 +340,7 @@ public sealed class ReviewQueueViewModel : ObservableObject
         Dispatcher.UIThread.Post(() =>
         {
             Interlocked.Exchange(ref _refreshScheduled, 0);
-            if (_attached) Refresh();
+            if (_attached) Refresh(clearActionStatus: true);
         });
     }
 
@@ -307,14 +349,7 @@ public sealed class ReviewQueueViewModel : ObservableObject
         IEnumerable<ReviewQueueItem> source,
         bool playback)
     {
-        ReviewQueueItem[] snapshot = source.ToArray();
-        target.Clear();
-        for (int index = 0; index < snapshot.Length; index++)
-        {
-            var row = new ReviewQueueRowViewModel(snapshot[index]);
-            if (playback) row.QueuePosition = index + 1;
-            target.Add(row);
-        }
+        ReviewQueueRowViewModel.ReconcileRows(target, source.ToArray(), playback);
     }
 
     void SetActionStatus(string message)
@@ -348,10 +383,7 @@ public sealed class ReviewQueueViewModel : ObservableObject
     }
 }
 
-/// <summary>
-/// 队列行的只读展示包装。所有高风险或已拦截项目都会在这里统一隐藏正文与署名，
-/// 防止组件和历史页面意外渲染第三方高风险引用。
-/// </summary>
+/// <summary>队列与历史行的只读展示包装。</summary>
 public sealed class ReviewQueueRowViewModel : ObservableObject
 {
     int _queuePosition;
@@ -386,15 +418,75 @@ public sealed class ReviewQueueRowViewModel : ObservableObject
 
     public string QueuePositionLabel => QueuePosition > 0 ? $"#{QueuePosition}" : string.Empty;
 
-    public string DisplayContent => MustMask
-        ? "高风险内容已隐藏"
-        : string.IsNullOrWhiteSpace(Item.Quote?.Content) ? "（无正文）" : Item.Quote.Content;
+    /// <summary>
+    /// 按 Id 增量对齐行集合，避免每次队列事件都把整页卡片清空重建，
+    /// 从而保留滚动位置、选中状态和按钮焦点。
+    /// </summary>
+    public static void ReconcileRows(
+        ObservableCollection<ReviewQueueRowViewModel> target,
+        IReadOnlyList<ReviewQueueItem> snapshot,
+        bool assignQueuePositions)
+    {
+        var desiredIds = new HashSet<string>(
+            snapshot.Select(item => item.Id),
+            StringComparer.OrdinalIgnoreCase);
 
-    public string DisplayAttribution => MustMask
-        ? "引用正文与署名已隐藏"
-        : BuildAttribution(Item.Quote?.Author, Item.Quote?.Title);
+        for (int i = target.Count - 1; i >= 0; i--)
+        {
+            if (!desiredIds.Contains(target[i].Item.Id))
+                target.RemoveAt(i);
+        }
 
-    public string RiskLabel => Item.RiskLabel;
+        for (int i = 0; i < snapshot.Count; i++)
+        {
+            ReviewQueueItem item = snapshot[i];
+            int existingIndex = -1;
+            for (int j = i; j < target.Count; j++)
+            {
+                if (string.Equals(target[j].Item.Id, item.Id, StringComparison.OrdinalIgnoreCase))
+                {
+                    existingIndex = j;
+                    break;
+                }
+            }
+
+            if (existingIndex < 0)
+                target.Insert(i, new ReviewQueueRowViewModel(item));
+            else if (existingIndex != i)
+                target.Move(existingIndex, i);
+
+            if (assignQueuePositions)
+                target[i].QueuePosition = i + 1;
+        }
+
+        while (target.Count > snapshot.Count)
+            target.RemoveAt(target.Count - 1);
+    }
+
+    public string DisplayContent => string.IsNullOrWhiteSpace(Item.Quote?.Content) ? "（无正文）" : Item.Quote.Content;
+
+    public string DisplayAttribution => BuildAttribution(Item.Quote?.Author, Item.Quote?.Title);
+
+    public bool HasAttribution => DisplayAttribution.Length > 0;
+
+    /// <summary>来源未开启 AI 审查时显示「未开启」，否则显示 AI 风险等级。</summary>
+    public string RiskLabel => Item.IsAiReviewSkipped ? "未开启" : Item.RiskLabel;
+
+    /// <summary>风险标签颜色：低风险绿、中风险黄、高风险红，未开启与未知为灰。</summary>
+    public IBrush RiskBrush => Item.IsAiReviewSkipped
+        ? GrayBrush
+        : Item.Risk switch
+        {
+            RiskLevel.Low => GreenBrush,
+            RiskLevel.Medium => YellowBrush,
+            RiskLevel.High => RedBrush,
+            _ => GrayBrush
+        };
+
+    static readonly IBrush GreenBrush = new ImmutableSolidColorBrush(Color.FromRgb(0x2E, 0xA0, 0x43));
+    static readonly IBrush YellowBrush = new ImmutableSolidColorBrush(Color.FromRgb(0xD9, 0xA4, 0x06));
+    static readonly IBrush RedBrush = new ImmutableSolidColorBrush(Color.FromRgb(0xD1, 0x34, 0x38));
+    static readonly IBrush GrayBrush = new ImmutableSolidColorBrush(Color.FromRgb(0x8A, 0x8A, 0x8A));
 
     public string ConfidenceLabel => Item.ConfidenceLabel;
 
@@ -402,9 +494,11 @@ public sealed class ReviewQueueRowViewModel : ObservableObject
 
     public string CategoryLabel => Item.CategoryLabel;
 
-    public string AiSummary => string.IsNullOrWhiteSpace(Item.AiReason)
-        ? $"{Item.RiskLabel} · AI 未提供理由"
-        : $"{Item.RiskLabel} · {Item.AiReason}";
+    public string AiSummary => Item.IsAiReviewSkipped
+        ? Item.AiReason ?? string.Empty
+        : string.IsNullOrWhiteSpace(Item.AiReason) ? "AI 未提供理由" : Item.AiReason;
+
+    public bool HasAiSummary => AiSummary.Length > 0;
 
     public string AiProviderLabel
     {
@@ -422,8 +516,6 @@ public sealed class ReviewQueueRowViewModel : ObservableObject
     public string SourceLabel => Item.SourceLabel;
 
     public string CreatedAtLabel => Item.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
-
-    public bool MustMask => Item.Risk == RiskLevel.High || Item.State == ReviewItemState.Blocked;
 
     static string BuildAttribution(string? author, string? title)
     {

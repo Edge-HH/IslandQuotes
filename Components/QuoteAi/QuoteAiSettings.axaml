@@ -1,4 +1,12 @@
-﻿<ci:ComponentBase x:Class="IslandQuotes.Components.QuoteAi.QuoteAiSettings"
+﻿<!--
+  IslandQuotes - Copyright (C) 2026 Edge-HH
+  本文件改编自 ExtraIsland（https://github.com/LiPolymer/ExtraIsland），
+  Copyright (C) 2024-2025 LiPolymer，以 GNU AGPLv3 授权。
+  原始文件：ExtraIsland/Components/Rhesis/RhesisSettings.axaml
+  修改：2026 年由 Edge-HH 修改，详见 NOTICE.md 与 git 历史。
+  SPDX-License-Identifier: AGPL-3.0-only
+-->
+<ci:ComponentBase x:Class="IslandQuotes.Components.QuoteAi.QuoteAiSettings"
                   x:TypeArguments="local:QuoteAiConfig"
                   xmlns="https://github.com/avaloniaui"
                   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -9,7 +17,7 @@
                   xmlns:fa="clr-namespace:FluentAvalonia.UI.Controls;assembly=FluentAvalonia"
                   mc:Ignorable="d" d:DesignHeight="560" d:DesignWidth="420"
                   AttachedToVisualTree="OnAttachedToVisualTree">
-    <ScrollViewer DataContext="{Binding RelativeSource={RelativeSource FindAncestor, AncestorType=local:QuoteAiSettings}}">
+    <ScrollViewer x:Name="RootScrollViewer">
         <StackPanel Classes="settings-container animated-intro">
             <Border Background="#204169e1"
                     CornerRadius="4"
@@ -145,12 +153,13 @@
             </fa:SettingsExpander>
             <fa:SettingsExpander IconSource="{ci:FluentIconSource &#xEF75;}"
                                  Header="刷新间隔"
-                                 Description="设定自动刷新的时间间隔,单位为秒,设为0即禁用">
+                                 Description="设定自动刷新的时间间隔,单位为秒,设为0即禁用(仍会显示一次队列内容);最大 86400 秒">
                 <fa:SettingsExpander.Footer>
                     <NumericUpDown Value="{Binding Settings.UpdateTimeGapSeconds, Mode=TwoWay}"
                                    VerticalAlignment="Center"
                                    FormatString="0.0"
                                    Minimum="0"
+                                   Maximum="86400"
                                    InputMethod.IsInputMethodEnabled="False"
                                    MinWidth="30"/>
                 </fa:SettingsExpander.Footer>
@@ -183,29 +192,265 @@
             <fa:SettingsExpander IconSource="{ci:FluentIconSource &#xEE39;}"
                                  IsVisible="{Binding Settings.IsAttributesSeparate}"
                                  Header="额外信息展示时长"
-                                 Description="设置额外信息被展示的时长">
+                                 Description="内容显示多久后切换为额外信息;实际不超过刷新间隔">
                 <fa:SettingsExpander.Footer>
                     <NumericUpDown Value="{Binding Settings.AttributesShowingInterval, Mode=TwoWay}"
                                    VerticalAlignment="Center"
                                    FormatString="0"
                                    Minimum="0"
-                                   Maximum="{Binding Settings.UpdateTimeGapSeconds}"
+                                   Maximum="86400"
                                    InputMethod.IsInputMethodEnabled="False"
                                    MinWidth="30"/>
                 </fa:SettingsExpander.Footer>
             </fa:SettingsExpander>
             <fa:SettingsExpander IconSource="{ci:FluentIconSource &#xE051;}"
-                                 Header="启用动画"
-                                 Description="禁用后,将不再播放动画,对低性能设备友好!">
+                                 Header="切换动画"
+                                 Description="选择内容切换时播放的动画">
                 <fa:SettingsExpander.Footer>
-                    <ToggleSwitch IsChecked="{Binding Settings.IsAnimationEnabled, Mode=TwoWay}"/>
+                    <ComboBox MinWidth="120"
+                              SelectedIndex="{Binding Settings.ContentAnimationModeIndex, Mode=TwoWay}">
+                        <ComboBoxItem Content="无"/>
+                        <ComboBoxItem Content="渐入渐出"/>
+                        <ComboBoxItem Content="向上翻页"/>
+                        <ComboBoxItem Content="向下翻页"/>
+                        <ComboBoxItem Content="向左翻页"/>
+                        <ComboBoxItem Content="向右翻页"/>
+                        <ComboBoxItem Content="扫光"/>
+                    </ComboBox>
                 </fa:SettingsExpander.Footer>
                 <fa:SettingsExpander.Items>
-                    <fa:SettingsExpanderItem IconSource="{ci:FluentIconSource &#xE095;}"
-                                             Content="启用翻页动画"
-                                             Description="启用后,切换动画样式将被替换为翻页(额外信息不受影响)">
+                    <fa:SettingsExpanderItem Content="扫光颜色"
+                                             Description="自定义扫过文字的高光颜色，支持 #AARRGGBB 透明度；">
                         <fa:SettingsExpanderItem.Footer>
-                            <ToggleSwitch IsChecked="{Binding Settings.IsSwapAnimationEnabled, Mode=TwoWay}"/>
+                            <StackPanel Spacing="4">
+                                <DockPanel>
+                                    <Border Width="20"
+                                            Height="20"
+                                            Margin="0 0 6 0"
+                                            CornerRadius="3"
+                                            BorderBrush="#40808080"
+                                            BorderThickness="1"
+                                            Background="{Binding Settings.ShimmerBrush}"/>
+                                    <TextBox Text="{Binding Settings.ShimmerColor, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                             Watermark="自动（半透明）"
+                                             MinWidth="140"/>
+                                </DockPanel>
+                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                    <Button Width="22" Height="22" Padding="0" Background="Transparent" BorderThickness="0" Tag="#FFFFFF" ToolTip.Tip="#FFFFFF" Click="ShimmerColorPresetButton_OnClick">
+                                        <Border Width="14" Height="14" CornerRadius="7" Background="#FFFFFF" BorderBrush="#40808080" BorderThickness="1"/>
+                                    </Button>
+                                    <Button Width="22" Height="22" Padding="0" Background="Transparent" BorderThickness="0" Tag="#000000" ToolTip.Tip="#000000" Click="ShimmerColorPresetButton_OnClick">
+                                        <Border Width="14" Height="14" CornerRadius="7" Background="#000000" BorderBrush="#40808080" BorderThickness="1"/>
+                                    </Button>
+                                    <Button Width="22" Height="22" Padding="0" Background="Transparent" BorderThickness="0" Tag="#FFD166" ToolTip.Tip="#FFD166" Click="ShimmerColorPresetButton_OnClick">
+                                        <Border Width="14" Height="14" CornerRadius="7" Background="#FFD166" BorderBrush="#40808080" BorderThickness="1"/>
+                                    </Button>
+                                    <Button Width="22" Height="22" Padding="0" Background="Transparent" BorderThickness="0" Tag="#7CC8FF" ToolTip.Tip="#7CC8FF" Click="ShimmerColorPresetButton_OnClick">
+                                        <Border Width="14" Height="14" CornerRadius="7" Background="#7CC8FF" BorderBrush="#40808080" BorderThickness="1"/>
+                                    </Button>
+                                    <Button Width="22" Height="22" Padding="0" Background="Transparent" BorderThickness="0" Tag="#7ED9A0" ToolTip.Tip="#7ED9A0" Click="ShimmerColorPresetButton_OnClick">
+                                        <Border Width="14" Height="14" CornerRadius="7" Background="#7ED9A0" BorderBrush="#40808080" BorderThickness="1"/>
+                                    </Button>
+                                    <Button Width="22" Height="22" Padding="0" Background="Transparent" BorderThickness="0" Tag="#FF9F9F" ToolTip.Tip="#FF9F9F" Click="ShimmerColorPresetButton_OnClick">
+                                        <Border Width="14" Height="14" CornerRadius="7" Background="#FF9F9F" BorderBrush="#40808080" BorderThickness="1"/>
+                                    </Button>
+                                </StackPanel>
+                            </StackPanel>
+                        </fa:SettingsExpanderItem.Footer>
+                    </fa:SettingsExpanderItem>
+                </fa:SettingsExpander.Items>
+            </fa:SettingsExpander>
+            <fa:SettingsExpander IconSource="{ci:FluentIconSource &#xF26F;}"
+                                 Header="文字样式"
+                                 Description="自定义主界面文字的字体、字号与颜色">
+                <fa:SettingsExpander.Items>
+                    <fa:SettingsExpanderItem Content="字体" Description="留空使用主界面字体">
+                        <fa:SettingsExpanderItem.Footer>
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <ComboBox x:Name="FontFamilyComboBox"
+                                          IsEditable="True"
+                                          MinWidth="160"
+                                          MaxWidth="240"
+                                          PlaceholderText="继承主界面字体"
+                                          Text="{Binding Settings.MainFontFamilyName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                          SelectionChanged="FontFamilyComboBox_OnSelectionChanged"
+                                          LostFocus="FontFamilyComboBox_OnLostFocus"/>
+                                <Button Content="继承"
+                                        Padding="8 4"
+                                        ToolTip.Tip="使用主界面字体"
+                                        Click="ResetFontFamilyButton_OnClick"/>
+                            </StackPanel>
+                        </fa:SettingsExpanderItem.Footer>
+                    </fa:SettingsExpanderItem>
+                    <fa:SettingsExpanderItem Content="字号" Description="设为 0 使用主界面默认字号">
+                        <fa:SettingsExpanderItem.Footer>
+                            <NumericUpDown Value="{Binding Settings.MainFontSize, Mode=TwoWay}"
+                                           VerticalAlignment="Center"
+                                           FormatString="0"
+                                           Minimum="0"
+                                           Maximum="200"
+                                           InputMethod.IsInputMethodEnabled="False"
+                                           MinWidth="60"/>
+                        </fa:SettingsExpanderItem.Footer>
+                    </fa:SettingsExpanderItem>
+                    <fa:SettingsExpanderItem Content="字重">
+                        <fa:SettingsExpanderItem.Footer>
+                            <ComboBox MinWidth="20"
+                                      SelectedIndex="{Binding Settings.MainFontWeightIndex, Mode=TwoWay}">
+                                <ComboBoxItem Content="继承"/>
+                                <ComboBoxItem Content="常规"/>
+                                <ComboBoxItem Content="中等"/>
+                                <ComboBoxItem Content="半粗"/>
+                                <ComboBoxItem Content="粗体"/>
+                                <ComboBoxItem Content="特粗"/>
+                                <ComboBoxItem Content="极粗"/>
+                            </ComboBox>
+                        </fa:SettingsExpanderItem.Footer>
+                    </fa:SettingsExpanderItem>
+                    <fa:SettingsExpanderItem Content="垂直位置"
+                                             Description="上下微调文字位置，单位像素；负数上移，正数下移">
+                        <fa:SettingsExpanderItem.Footer>
+                            <NumericUpDown Value="{Binding Settings.TextVerticalOffset, Mode=TwoWay}"
+                                           VerticalAlignment="Center"
+                                           FormatString="0"
+                                           Minimum="-200"
+                                           Maximum="200"
+                                           InputMethod.IsInputMethodEnabled="False"
+                                           MinWidth="70"/>
+                        </fa:SettingsExpanderItem.Footer>
+                    </fa:SettingsExpanderItem>
+                    <fa:SettingsExpanderItem Content="文字颜色"
+                                             Description="支持 #RRGGBB、#AARRGGBB 或颜色名；留空使用主界面颜色">
+                        <fa:SettingsExpanderItem.Footer>
+                            <StackPanel Spacing="4">
+                                <DockPanel>
+                                    <Border Width="20"
+                                            Height="20"
+                                            Margin="0 0 6 0"
+                                            CornerRadius="3"
+                                            BorderBrush="#40808080"
+                                            BorderThickness="1"
+                                            Background="{Binding Settings.MainTextBrush}"/>
+                                    <TextBox Text="{Binding Settings.MainTextColor, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                             Watermark="#FFFFFF"
+                                             MinWidth="140"/>
+                                </DockPanel>
+                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                    <Button Width="22" Height="22" Padding="0" Background="Transparent" BorderThickness="0" Tag="#FFFFFF" ToolTip.Tip="#FFFFFF" Click="MainColorPresetButton_OnClick">
+                                        <Border Width="14" Height="14" CornerRadius="7" Background="#FFFFFF" BorderBrush="#40808080" BorderThickness="1"/>
+                                    </Button>
+                                    <Button Width="22" Height="22" Padding="0" Background="Transparent" BorderThickness="0" Tag="#E0E0E0" ToolTip.Tip="#E0E0E0" Click="MainColorPresetButton_OnClick">
+                                        <Border Width="14" Height="14" CornerRadius="7" Background="#E0E0E0" BorderBrush="#40808080" BorderThickness="1"/>
+                                    </Button>
+                                    <Button Width="22" Height="22" Padding="0" Background="Transparent" BorderThickness="0" Tag="#9E9E9E" ToolTip.Tip="#9E9E9E" Click="MainColorPresetButton_OnClick">
+                                        <Border Width="14" Height="14" CornerRadius="7" Background="#9E9E9E" BorderBrush="#40808080" BorderThickness="1"/>
+                                    </Button>
+                                    <Button Width="22" Height="22" Padding="0" Background="Transparent" BorderThickness="0" Tag="#FFD166" ToolTip.Tip="#FFD166" Click="MainColorPresetButton_OnClick">
+                                        <Border Width="14" Height="14" CornerRadius="7" Background="#FFD166" BorderBrush="#40808080" BorderThickness="1"/>
+                                    </Button>
+                                    <Button Width="22" Height="22" Padding="0" Background="Transparent" BorderThickness="0" Tag="#7CC8FF" ToolTip.Tip="#7CC8FF" Click="MainColorPresetButton_OnClick">
+                                        <Border Width="14" Height="14" CornerRadius="7" Background="#7CC8FF" BorderBrush="#40808080" BorderThickness="1"/>
+                                    </Button>
+                                    <Button Width="22" Height="22" Padding="0" Background="Transparent" BorderThickness="0" Tag="#7ED9A0" ToolTip.Tip="#7ED9A0" Click="MainColorPresetButton_OnClick">
+                                        <Border Width="14" Height="14" CornerRadius="7" Background="#7ED9A0" BorderBrush="#40808080" BorderThickness="1"/>
+                                    </Button>
+                                    <Button Width="22" Height="22" Padding="0" Background="Transparent" BorderThickness="0" Tag="#FF9F9F" ToolTip.Tip="#FF9F9F" Click="MainColorPresetButton_OnClick">
+                                        <Border Width="14" Height="14" CornerRadius="7" Background="#FF9F9F" BorderBrush="#40808080" BorderThickness="1"/>
+                                    </Button>
+                                    <Button Width="22" Height="22" Padding="0" Background="Transparent" BorderThickness="0" Tag="#C9A7FF" ToolTip.Tip="#C9A7FF" Click="MainColorPresetButton_OnClick">
+                                        <Border Width="14" Height="14" CornerRadius="7" Background="#C9A7FF" BorderBrush="#40808080" BorderThickness="1"/>
+                                    </Button>
+                                </StackPanel>
+                            </StackPanel>
+                        </fa:SettingsExpanderItem.Footer>
+                    </fa:SettingsExpanderItem>
+                </fa:SettingsExpander.Items>
+            </fa:SettingsExpander>
+            <fa:SettingsExpander IconSource="{ci:FluentIconSource &#xF263;}"
+                                 Header="额外信息样式"
+                                 Description="作者与出处的字号和颜色">
+                <fa:SettingsExpander.Items>
+                    <fa:SettingsExpanderItem Content="字号" Description="设为 0 使用主界面默认字号">
+                        <fa:SettingsExpanderItem.Footer>
+                            <NumericUpDown Value="{Binding Settings.AttributionFontSize, Mode=TwoWay}"
+                                           VerticalAlignment="Center"
+                                           FormatString="0"
+                                           Minimum="0"
+                                           Maximum="200"
+                                           InputMethod.IsInputMethodEnabled="False"
+                                           MinWidth="60"/>
+                        </fa:SettingsExpanderItem.Footer>
+                    </fa:SettingsExpanderItem>
+                    <fa:SettingsExpanderItem Content="颜色"
+                                             Description="支持 #RRGGBB、#AARRGGBB 或颜色名；留空使用主界面颜色">
+                        <fa:SettingsExpanderItem.Footer>
+                            <StackPanel Spacing="4">
+                                <DockPanel>
+                                    <Border Width="20"
+                                            Height="20"
+                                            Margin="0 0 6 0"
+                                            CornerRadius="3"
+                                            BorderBrush="#40808080"
+                                            BorderThickness="1"
+                                            Background="{Binding Settings.AttributionTextBrush}"/>
+                                    <TextBox Text="{Binding Settings.AttributionTextColor, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                             Watermark="#FFFFFF"
+                                             MinWidth="140"/>
+                                </DockPanel>
+                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                    <Button Width="22" Height="22" Padding="0" Background="Transparent" BorderThickness="0" Tag="#FFFFFF" ToolTip.Tip="#FFFFFF" Click="AttributionColorPresetButton_OnClick">
+                                        <Border Width="14" Height="14" CornerRadius="7" Background="#FFFFFF" BorderBrush="#40808080" BorderThickness="1"/>
+                                    </Button>
+                                    <Button Width="22" Height="22" Padding="0" Background="Transparent" BorderThickness="0" Tag="#E0E0E0" ToolTip.Tip="#E0E0E0" Click="AttributionColorPresetButton_OnClick">
+                                        <Border Width="14" Height="14" CornerRadius="7" Background="#E0E0E0" BorderBrush="#40808080" BorderThickness="1"/>
+                                    </Button>
+                                    <Button Width="22" Height="22" Padding="0" Background="Transparent" BorderThickness="0" Tag="#9E9E9E" ToolTip.Tip="#9E9E9E" Click="AttributionColorPresetButton_OnClick">
+                                        <Border Width="14" Height="14" CornerRadius="7" Background="#9E9E9E" BorderBrush="#40808080" BorderThickness="1"/>
+                                    </Button>
+                                    <Button Width="22" Height="22" Padding="0" Background="Transparent" BorderThickness="0" Tag="#FFD166" ToolTip.Tip="#FFD166" Click="AttributionColorPresetButton_OnClick">
+                                        <Border Width="14" Height="14" CornerRadius="7" Background="#FFD166" BorderBrush="#40808080" BorderThickness="1"/>
+                                    </Button>
+                                    <Button Width="22" Height="22" Padding="0" Background="Transparent" BorderThickness="0" Tag="#7CC8FF" ToolTip.Tip="#7CC8FF" Click="AttributionColorPresetButton_OnClick">
+                                        <Border Width="14" Height="14" CornerRadius="7" Background="#7CC8FF" BorderBrush="#40808080" BorderThickness="1"/>
+                                    </Button>
+                                    <Button Width="22" Height="22" Padding="0" Background="Transparent" BorderThickness="0" Tag="#7ED9A0" ToolTip.Tip="#7ED9A0" Click="AttributionColorPresetButton_OnClick">
+                                        <Border Width="14" Height="14" CornerRadius="7" Background="#7ED9A0" BorderBrush="#40808080" BorderThickness="1"/>
+                                    </Button>
+                                    <Button Width="22" Height="22" Padding="0" Background="Transparent" BorderThickness="0" Tag="#FF9F9F" ToolTip.Tip="#FF9F9F" Click="AttributionColorPresetButton_OnClick">
+                                        <Border Width="14" Height="14" CornerRadius="7" Background="#FF9F9F" BorderBrush="#40808080" BorderThickness="1"/>
+                                    </Button>
+                                    <Button Width="22" Height="22" Padding="0" Background="Transparent" BorderThickness="0" Tag="#C9A7FF" ToolTip.Tip="#C9A7FF" Click="AttributionColorPresetButton_OnClick">
+                                        <Border Width="14" Height="14" CornerRadius="7" Background="#C9A7FF" BorderBrush="#40808080" BorderThickness="1"/>
+                                    </Button>
+                                </StackPanel>
+                            </StackPanel>
+                        </fa:SettingsExpanderItem.Footer>
+                    </fa:SettingsExpanderItem>
+                </fa:SettingsExpander.Items>
+            </fa:SettingsExpander>
+            <fa:SettingsExpander IconSource="{ci:FluentIconSource &#xF2D3;}"
+                                 Header="长内容滚动"
+                                 Description="内容超过设定字数时改为左右滚动显示；设为 0 不启用滚动">
+                <fa:SettingsExpander.Footer>
+                    <NumericUpDown Value="{Binding Settings.ScrollMaxLength, Mode=TwoWay}"
+                                   VerticalAlignment="Center"
+                                   FormatString="0"
+                                   Minimum="0"
+                                   Maximum="500"
+                                   InputMethod.IsInputMethodEnabled="False"
+                                   MinWidth="60"/>
+                </fa:SettingsExpander.Footer>
+                <fa:SettingsExpander.Items>
+                    <fa:SettingsExpanderItem Content="滚动速度"
+                                             Description="每秒滚动的像素数；数值越大越快">
+                        <fa:SettingsExpanderItem.Footer>
+                            <NumericUpDown Value="{Binding Settings.ScrollSpeedPixelsPerSecond, Mode=TwoWay}"
+                                           VerticalAlignment="Center"
+                                           FormatString="0"
+                                           Minimum="5"
+                                           Maximum="500"
+                                           InputMethod.IsInputMethodEnabled="False"
+                                           MinWidth="70"/>
                         </fa:SettingsExpanderItem.Footer>
                     </fa:SettingsExpanderItem>
                 </fa:SettingsExpander.Items>

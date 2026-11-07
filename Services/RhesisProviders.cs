@@ -1,3 +1,10 @@
+// IslandQuotes - Copyright (C) 2026 Edge-HH
+// 本文件改编自 ExtraIsland（https://github.com/LiPolymer/ExtraIsland），
+// Copyright (C) 2024-2025 LiPolymer，以 GNU AGPLv3 授权。
+// 原始文件：ExtraIsland/Shared/RhesisProviders.cs
+// 修改：2026 年由 Edge-HH 修改，详见 NOTICE.md 与 git 历史。
+// SPDX-License-Identifier: AGPL-3.0-only
+
 using System.IO;
 using System.Globalization;
 using System.Net.Http;

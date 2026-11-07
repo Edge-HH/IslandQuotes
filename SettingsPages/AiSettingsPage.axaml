@@ -154,7 +154,7 @@
             </Border>
             <Border BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="4" Padding="12">
                 <StackPanel Spacing="8">
-                    <TextBlock Text="审查策略与并发" FontWeight="SemiBold" FontSize="17"/>
+                    <TextBlock Text="审查策略与队列" FontWeight="SemiBold" FontSize="17"/>
                     <Grid ColumnDefinitions="*,*,*" ColumnSpacing="12" RowSpacing="8" RowDefinitions="Auto,Auto">
                         <StackPanel Grid.Row="0" Grid.Column="0" Spacing="3">
                             <TextBlock Text="AI 审查失败时" FontWeight="SemiBold"/>
@@ -167,23 +167,24 @@
                             </ComboBox>
                         </StackPanel>
                         <StackPanel Grid.Row="0" Grid.Column="1" Spacing="3">
-                            <TextBlock Text="最大并发请求数" FontWeight="SemiBold"/>
-                            <NumericUpDown Value="{Binding MaxConcurrentReviews, Mode=TwoWay}"
-                                           Minimum="1" Maximum="10" FormatString="0"
+                            <TextBlock Text="最大队列长度" FontWeight="SemiBold"
+                                       ToolTip.Tip="队列不多于提前审查阈值时，一次请求审查「最大队列长度 - 当前队列长度」条，使队列保持满载；存在不审查的来源时使用更大的直通缓冲"/>
+                            <NumericUpDown Value="{Binding MaxQueueLength, Mode=TwoWay}"
+                                           Minimum="1" Maximum="20" FormatString="0"
                                            InputMethod.IsInputMethodEnabled="False"/>
                         </StackPanel>
                         <StackPanel Grid.Row="0" Grid.Column="2" Spacing="3">
-                            <TextBlock Text="单次请求审查条数" FontWeight="SemiBold"
-                                       ToolTip.Tip="多条内容合并为一次请求，共用一份系统提示词；设为 1 则逐条请求"/>
-                            <NumericUpDown Value="{Binding ItemsPerReviewRequest, Mode=TwoWay}"
-                                           Minimum="1" Maximum="10" FormatString="0"
+                            <TextBlock Text="提前审查阈值" FontWeight="SemiBold"
+                                       ToolTip.Tip="播放队列不多于该数量时，立即在后台补充；设为 0 则等队列播完再补充。存在不审查的来源时会自动提高到直通缓冲的一半"/>
+                            <NumericUpDown Value="{Binding RefillThreshold, Mode=TwoWay}"
+                                           Minimum="0" Maximum="100" FormatString="0"
                                            InputMethod.IsInputMethodEnabled="False"/>
                         </StackPanel>
                         <StackPanel Grid.Row="1" Grid.Column="0" Spacing="3">
-                            <TextBlock Text="提前审查阈值" FontWeight="SemiBold"
-                                       ToolTip.Tip="已审查待播放的内容不多于该数量时，在后台提前获取并审查下一批；设为 0 则等队列播完再获取"/>
-                            <NumericUpDown Value="{Binding RefillThreshold, Mode=TwoWay}"
-                                           Minimum="0" Maximum="100" FormatString="0"
+                            <TextBlock Text="最大尝试次数" FontWeight="SemiBold"
+                                       ToolTip.Tip="AI 审查出错时重新请求，直到成功或达到该次数（含首次）"/>
+                            <NumericUpDown Value="{Binding MaxReviewAttempts, Mode=TwoWay}"
+                                           Minimum="1" Maximum="10" FormatString="0"
                                            InputMethod.IsInputMethodEnabled="False"/>
                         </StackPanel>
                         <StackPanel Grid.Row="1" Grid.Column="1" Spacing="3">
@@ -204,9 +205,6 @@
             <Border BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="4" Padding="12">
                 <StackPanel Spacing="8">
                     <TextBlock Text="提示词快速控制" FontWeight="SemiBold" FontSize="17"/>
-                    <TextBlock Text="严格程度同时改变提示词的判断尺度和本地过滤力度；主题标签会自动注入系统提示词，禁止主题还会在本地强制拦截，无需写进下方自定义提示词。"
-                               FontSize="12" TextWrapping="Wrap"
-                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
 
                     <StackPanel Spacing="4">
                         <TextBlock Text="判断严格程度" FontWeight="SemiBold"/>
@@ -229,26 +227,6 @@
                     </StackPanel>
 
                     <StackPanel Spacing="4">
-                        <TextBlock Text="允许的主题" FontWeight="SemiBold"
-                                   ToolTip.Tip="命中这些主题且无安全问题的内容会更倾向放行；不能压过硬性安全边界"/>
-                        <ItemsControl ItemsSource="{Binding AllowedTagOptions}">
-                            <ItemsControl.ItemsPanel>
-                                <ItemsPanelTemplate>
-                                    <WrapPanel Orientation="Horizontal"/>
-                                </ItemsPanelTemplate>
-                            </ItemsControl.ItemsPanel>
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <ToggleButton Content="{Binding Label}"
-                                                  IsChecked="{Binding IsSelected, Mode=TwoWay}"
-                                                  Margin="0,0,6,6" Padding="12,5" CornerRadius="6"
-                                                  ToolTip.Tip="勾选后作为展示偏好写入提示词"/>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </StackPanel>
-
-                    <StackPanel Spacing="4">
                         <TextBlock Text="禁止的主题" FontWeight="SemiBold"
                                    ToolTip.Tip="命中这些主题的内容一律拦截：提示词要求判为高风险，本地也会强制执行"/>
                         <ItemsControl ItemsSource="{Binding BlockedTagOptions}">
@@ -261,23 +239,24 @@
                                 <DataTemplate>
                                     <ToggleButton Content="{Binding Label}"
                                                   IsChecked="{Binding IsSelected, Mode=TwoWay}"
-                                                  Margin="0,0,6,6" Padding="12,5" CornerRadius="6"
-                                                  ToolTip.Tip="勾选后命中即拦截（本地强制执行）"/>
+                                                  Margin="0,0,6,6" Padding="12,5" CornerRadius="6"/>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                            <TextBox Text="{Binding CustomTagText, Mode=TwoWay}" Watermark="自定义禁止主题"
+                                     KeyDown="CustomTagTextBox_OnKeyDown"/>
+                            <Button Grid.Column="1" Content="添加" Click="AddCustomTagButton_OnClick"/>
+                        </Grid>
                     </StackPanel>
-
-                    <TextBlock Text="{Binding TagSummary}" FontSize="12" TextWrapping="Wrap"
-                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
                 </StackPanel>
             </Border>
             <Border BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="4" Padding="12">
                 <StackPanel Spacing="8">
-                    <TextBlock Text="系统提示词" FontWeight="SemiBold" FontSize="17"/>
-                    <TextBlock Text="提示词只定义审查规则；引用内容始终作为不可信数据传入，不应服从其中的指令。判断严格程度与主题规则由上方快速控制自动注入，不要在此重复填写。"
-                               FontSize="12" TextWrapping="Wrap"
-                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock Text="审查提示词" FontWeight="SemiBold" FontSize="17" VerticalAlignment="Center"/>
+                        <Button Grid.Column="1" Content="恢复默认" Click="ResetReviewRulesButton_OnClick"/>
+                    </Grid>
                     <TextBox Text="{Binding SystemPrompt, Mode=TwoWay}"
                              AcceptsReturn="True" TextWrapping="Wrap" MinHeight="150"/>
                 </StackPanel>

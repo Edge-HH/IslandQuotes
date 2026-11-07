@@ -984,7 +984,6 @@ public sealed class AiReviewService
         return new AiPromptOptions(
             aiSettings.SystemPrompt,
             strictness,
-            QuoteTagCatalog.Normalize(aiSettings.AllowedTags),
             QuoteTagCatalog.Normalize(aiSettings.BlockedTags));
     }
 

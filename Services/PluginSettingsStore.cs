@@ -11,6 +11,16 @@ public sealed class PluginSettingsStore
 {
     private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
 
+    /// <summary>播放队列最大长度的取值范围；同时是单次 AI 请求合并审查的条数上限。</summary>
+    public const int MinQueueLength = 1;
+    public const int MaxQueueLengthLimit = 20;
+
+    /// <summary>AI 审查最大尝试次数的上限。</summary>
+    public const int MaxReviewAttemptsLimit = 10;
+
+    /// <summary>当前审查规则提示词格式版本：2 起 SystemPrompt 只保存可编辑的审查规则，不含 JSON 输出要求。</summary>
+    private const int CurrentPromptVersion = 2;
+
     private readonly object _gate = new();
     private readonly SemaphoreSlim _saveGate = new(1, 1);
     private PluginSettings _settings = new();
@@ -239,9 +249,10 @@ public sealed class PluginSettingsStore
             }
         }
 
+        changed |= MigrateReviewRules(ai);
         if (string.IsNullOrWhiteSpace(ai.SystemPrompt))
         {
-            ai.SystemPrompt = AiProviderPresetCatalog.DefaultSystemPrompt;
+            ai.SystemPrompt = AiProviderPresetCatalog.DefaultReviewRules;
             changed = true;
         }
 
@@ -258,13 +269,8 @@ public sealed class PluginSettingsStore
             changed = true;
         }
 
+        ai.BlockedTags ??= [];
         changed |= NormalizeTagList(ai.BlockedTags);
-        changed |= NormalizeTagList(ai.AllowedTags);
-
-        // 同一标签同时出现在允许与禁止列表时，按失败关闭原则以禁止为准。
-        int conflicted = ai.AllowedTags.RemoveAll(tag =>
-            ai.BlockedTags.Contains(tag, StringComparer.OrdinalIgnoreCase));
-        if (conflicted > 0) changed = true;
 
         int retired = ai.Profiles.RemoveAll(static profile =>
             profile.IsBuiltIn &&
@@ -291,20 +297,19 @@ public sealed class PluginSettingsStore
         EnsureUniqueProfileIds(ai.Profiles, ref changed);
 
         AiProviderProfile? active = ai.Profiles.FirstOrDefault(profile =>
-            profile.IsEnabled &&
             string.Equals(profile.Id, ai.ActiveProfileId, StringComparison.OrdinalIgnoreCase));
 
         if (active is null)
         {
-            AiProviderProfile? fallback = ai.Profiles.FirstOrDefault(static profile =>
-                                              profile.IsEnabled &&
-                                              string.Equals(profile.Id, AiProviderPresetCatalog.DefaultProfileId, StringComparison.OrdinalIgnoreCase))
-                                          ?? ai.Profiles.FirstOrDefault(static profile => profile.IsEnabled)
-                                          ?? ai.Profiles.FirstOrDefault();
-            string fallbackId = fallback?.Id ?? string.Empty;
-            if (!string.Equals(ai.ActiveProfileId, fallbackId, StringComparison.Ordinal))
+            // 只在确实存在「已启用且配置完整」的供应商时才自动切换。
+            // 不能把活动 ID 悄悄改成一个空的默认预设——那会让 AI 审查从此刻起全部失败，
+            // 而界面上只看到「暂无可播放的内容」。
+            AiProviderProfile? fallback = ai.Profiles.FirstOrDefault(profile =>
+                profile.IsEnabled && ValidateProfile(profile) is null);
+            if (fallback is not null
+                && !string.Equals(ai.ActiveProfileId, fallback.Id, StringComparison.Ordinal))
             {
-                ai.ActiveProfileId = fallbackId;
+                ai.ActiveProfileId = fallback.Id;
                 changed = true;
             }
         }
@@ -315,17 +320,17 @@ public sealed class PluginSettingsStore
         }
 
         ReviewSettings review = _settings.Review;
-        int concurrency = Math.Clamp(review.MaxConcurrentReviews, 1, 10);
-        if (concurrency != review.MaxConcurrentReviews)
+        int maxQueueLength = Math.Clamp(review.MaxQueueLength, MinQueueLength, MaxQueueLengthLimit);
+        if (maxQueueLength != review.MaxQueueLength)
         {
-            review.MaxConcurrentReviews = concurrency;
+            review.MaxQueueLength = maxQueueLength;
             changed = true;
         }
 
-        int itemsPerRequest = Math.Clamp(review.ItemsPerReviewRequest, 1, 10);
-        if (itemsPerRequest != review.ItemsPerReviewRequest)
+        int maxAttempts = Math.Clamp(review.MaxReviewAttempts, 1, MaxReviewAttemptsLimit);
+        if (maxAttempts != review.MaxReviewAttempts)
         {
-            review.ItemsPerReviewRequest = itemsPerRequest;
+            review.MaxReviewAttempts = maxAttempts;
             changed = true;
         }
 
@@ -353,6 +358,43 @@ public sealed class PluginSettingsStore
 
         return changed;
     }
+
+    /// <summary>
+    /// 把旧版系统提示词迁移为仅含审查规则：旧版保存的是含 JSON 输出要求的完整提示词，
+    /// 或只追加在默认提示词之后的运营者附加规则。返回设置是否被修改。
+    /// </summary>
+    private static bool MigrateReviewRules(AiSettings ai)
+    {
+        if (ai.PromptVersion >= CurrentPromptVersion) return false;
+
+        string prompt = NormalizeNewlines(ai.SystemPrompt).Trim();
+        string legacyDefault = NormalizeNewlines(AiProviderPresetCatalog.LegacyDefaultSystemPrompt).Trim();
+        string legacyFormat = NormalizeNewlines(AiProviderPresetCatalog.LegacyOutputFormatRules).Trim();
+        string defaultRules = NormalizeNewlines(AiProviderPresetCatalog.DefaultReviewRules).Trim();
+
+        if (prompt.Length == 0 || string.Equals(prompt, legacyDefault, StringComparison.Ordinal))
+        {
+            prompt = defaultRules;
+        }
+        else
+        {
+            // JSON 输出要求现在由系统固定追加，从用户可编辑部分移除。
+            prompt = prompt.Replace(legacyFormat, string.Empty, StringComparison.Ordinal).Trim();
+            string roleLine = defaultRules.Split('\n')[0];
+            if (!prompt.Contains(roleLine, StringComparison.Ordinal))
+            {
+                // 旧版把非默认文本当作附加规则拼在默认提示词之后；迁移后保留同样的效果。
+                prompt = defaultRules + "\n\n运营者附加规则：\n" + prompt;
+            }
+        }
+
+        ai.SystemPrompt = prompt;
+        ai.PromptVersion = CurrentPromptVersion;
+        return true;
+    }
+
+    private static string NormalizeNewlines(string? value)
+        => (value ?? string.Empty).Replace("\r\n", "\n", StringComparison.Ordinal);
 
     /// <summary>去空格、去空项、去重并限制长度与数量；返回列表是否被修改。</summary>
     private static bool NormalizeTagList(List<string>? tags)

@@ -12,6 +12,9 @@ public interface IQuoteProvider
     int DefaultWeight { get; }
     bool IsAiReviewEnabledByDefault => true;
     Task<QuoteContent> FetchAsync(QuoteProviderConfig config, int lengthLimitation, CancellationToken cancellationToken = default);
+
+    /// <summary>该来源是否要求按顺序抓取（例如自定义来源的顺序播放）；为 true 时补货会串行抓取。</summary>
+    bool RequiresSequentialFetch => false;
 }
 
 public interface IQuoteProviderSettingsFactory

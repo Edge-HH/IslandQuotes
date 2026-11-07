@@ -9,3 +9,6 @@ TestResults/
 
 # Mimosa hook runtime state
 .mimosa/
+
+# JetBrains Rider
+.idea/

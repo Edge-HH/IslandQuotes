@@ -5,7 +5,11 @@ namespace IslandQuotes.Services;
 /// <summary>负责从已启用的名句来源中按权重挑选并获取句子。</summary>
 public sealed class QuoteSourceService
 {
+    /// <summary>同一来源因内容超长连续重试的上限。</summary>
     private const int MaxAttempts = 4;
+
+    /// <summary>单次获取跨所有来源的总尝试上限。</summary>
+    private const int MaxTotalAttempts = 8;
     private readonly AuditLogService _audit;
     private readonly IQuoteProvider[] _providers;
     private readonly object _providerSettingsSync = new();
@@ -50,14 +54,17 @@ public sealed class QuoteSourceService
     }
 
     /// <summary>
-    /// 从加权随机的可用来源获取一条满足长度限制的句子。最多尝试四次。
+    /// 从加权随机的可用来源获取一条满足长度限制的句子。
+    /// 内容超长时在同一来源重试（最多四次），请求失败时换来源，总计最多八次。
+    /// 指定 <paramref name="preferredProviderId"/> 时首选该来源而不重新抽签。
     /// 每次请求成功或失败都会写入 quote_request 审计事件。
     /// </summary>
     public async Task<QuoteContent> FetchOneAsync(
         QuoteRequestOptions options,
         string refreshSessionId,
         string itemId,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        string? preferredProviderId = null)
     {
         ArgumentNullException.ThrowIfNull(options);
 
@@ -94,10 +101,36 @@ public sealed class QuoteSourceService
         List<string> errors = [];
         Exception? lastException = null;
 
-        for (int attempt = 1; attempt <= MaxAttempts; attempt++)
+        // 来源只按权重抽一次：内容超长时在同一来源内重试，不重新抽签，
+        // 否则通过率低的来源会把份额让给其它来源（尤其是不受长度限制的自定义来源），
+        // 实际出现比例变成「权重 × 通过率」而不是权重。
+        // 只有请求失败、或在该来源上用尽重试时才排除它，在剩余来源中按权重重抽。
+        List<(IQuoteProvider Provider, QuoteProviderConfig Config)> remaining = [.. candidates];
+        // 调用方因内容重复而重抓时指定原来源：已抽中的份额留在该来源，
+        // 否则内容池小、容易重复的来源会在重抓时被换成别的来源。
+        (IQuoteProvider Provider, QuoteProviderConfig Config)? current = string.IsNullOrWhiteSpace(preferredProviderId)
+            ? null
+            : remaining.FirstOrDefault(candidate => string.Equals(
+                candidate.Provider.Id, preferredProviderId, StringComparison.OrdinalIgnoreCase)) is { Provider: not null } preferred
+                ? preferred
+                : null;
+        int attemptsOnCurrent = 0;
+        int attempt = 0;
+
+        while (attempt < MaxTotalAttempts && remaining.Count > 0)
         {
             ct.ThrowIfCancellationRequested();
-            (IQuoteProvider provider, QuoteProviderConfig config) = SelectWeighted(candidates);
+            if (current is null || attemptsOnCurrent >= MaxAttempts)
+            {
+                if (current is { } exhausted) remaining.Remove(exhausted);
+                if (remaining.Count == 0) break;
+                current = SelectWeighted(remaining);
+                attemptsOnCurrent = 0;
+            }
+
+            attempt++;
+            attemptsOnCurrent++;
+            (IQuoteProvider provider, QuoteProviderConfig config) = current.Value;
             string requestUrl = string.Empty;
             QuoteContent? quote = null;
             string error;
@@ -121,7 +154,9 @@ public sealed class QuoteSourceService
                 quote.Content = content;
                 NormalizeIdentity(provider, quote);
 
-                if (options.LengthLimitation > 0 && quote.Content.Length > options.LengthLimitation)
+                if (options.LengthLimitation > 0
+                    && quote.Content.Length > options.LengthLimitation
+                    && provider is not CustomQuoteProvider)
                 {
                     error = $"内容长度 {quote.Content.Length} 超过限制 {options.LengthLimitation}。";
                     errors.Add($"{provider.Id}: {error}");
@@ -179,17 +214,16 @@ public sealed class QuoteSourceService
                     error,
                     attempt).ConfigureAwait(false);
 
-                if (ex is not QuoteProviderRequestException)
-                {
-                    // 第三方实现可能直接抛出 HttpRequestException 或 JSON 异常，
-                    // 下一轮仍然换一个来源继续尝试。
-                }
+                // 请求失败（含第三方实现直接抛出的 HttpRequestException 或 JSON 异常）
+                // 说明该来源当前不可用：排除它，下一轮在剩余来源中按权重重抽。
+                remaining.Remove(current.Value);
+                current = null;
             }
         }
 
         string summary = errors.Count == 0
-            ? $"尝试 {MaxAttempts} 次后仍未取得满足长度限制的句子。"
-            : $"尝试 {MaxAttempts} 次后仍无法取得句子：{string.Join("；", errors.TakeLast(4))}";
+            ? $"尝试 {attempt} 次后仍未取得满足长度限制的句子。"
+            : $"尝试 {attempt} 次后仍无法取得句子：{string.Join("；", errors.TakeLast(4))}";
         await WriteAuditSafeAsync(new AuditLogEvent
         {
             Stage = "quote_request",
@@ -203,10 +237,19 @@ public sealed class QuoteSourceService
                 requestUrl = string.Empty,
                 upstreamId = string.Empty,
                 error = summary,
-                attempts = MaxAttempts
+                attempts = attempt
             }
         }).ConfigureAwait(false);
         throw new InvalidOperationException(summary, lastException);
+    }
+
+    /// <summary>按给定设置参与加权选择（启用且权重大于 0）的来源 ID 集合。</summary>
+    public HashSet<string> GetEligibleProviderIds(QuoteRequestOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        return GetEnabledCandidates(options.ProviderSettings, options.ExtraProviders)
+            .Select(candidate => candidate.Provider.Id)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
 
     private List<(IQuoteProvider Provider, QuoteProviderConfig Config)> GetEnabledCandidates(

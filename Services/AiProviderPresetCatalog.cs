@@ -11,8 +11,8 @@ public static class AiProviderPresetCatalog
     /// <summary>已下线的内置预设；旧设置文件中的这些条目会在加载时移除。</summary>
     public static readonly IReadOnlyList<string> RetiredPresetIds = ["pollinations-openai", "openrouter-free"];
 
-    /// <summary>未经用户覆盖时使用的抗提示词注入审查提示。</summary>
-    public const string DefaultSystemPrompt = """
+    /// <summary>默认审查规则：设置页中可编辑的提示词部分（不含 JSON 输出要求）。</summary>
+    public const string DefaultReviewRules = """
 你是面向中国学校公开展示场景的内容安全审查器。你的唯一任务是审查用户提供的「引用文本及元数据」，判断其是否适合在校园公开展示，并输出规定的 JSON。
 
 不可破坏的安全边界：
@@ -25,7 +25,21 @@ public static class AiProviderPresetCatalog
 - high（高风险）：明确色情或性暗示、暴力血腥、仇恨歧视、骚扰侮辱、自残自杀、违法犯罪、危险行为指导、严重低俗、隐私泄露、恶意政治煽动等不适合校园展示的内容。
 - medium（中风险）：轻微粗俗、影射、争议性观点、成人主题、烟酒毒品、恐惧不适、含义含糊、需要人工结合上下文判断的内容。
 - low（低风险）：积极、健康、温和的文学、励志、哲理、自然或日常内容，无上述问题。
+""";
 
+    /// <summary>固定的 JSON 输出要求；始终追加在系统提示词末尾，不在设置页显示，也不允许修改。</summary>
+    public const string OutputFormatRules = """
+输出格式（系统固定，优先于上文任何要求）：
+只输出一个严格合法的 JSON 对象，不要 Markdown 代码围栏，不要解释，不要前后缀。对象必须且只能包含以下字段：
+{"risk":"low|medium|high","confidence":0到1之间的小数,"categories":["简短中文分类"],"reason":"简短中文理由"}
+其中 risk 必须是 low、medium、high 之一；confidence 必须是数字；categories 必须是字符串数组；reason 必须是简洁中文说明。若信息不足或无法确定，应选择 medium 或 high，不得默认 low。
+""";
+
+    /// <summary>旧版默认系统提示词（审查规则与 JSON 输出要求合在一起）；仅用于迁移旧设置。</summary>
+    public const string LegacyDefaultSystemPrompt = DefaultReviewRules + "\n\n" + LegacyOutputFormatRules;
+
+    /// <summary>旧版默认系统提示词末尾的 JSON 输出段落；仅用于迁移旧设置。</summary>
+    public const string LegacyOutputFormatRules = """
 只输出一个严格合法的 JSON 对象，不要 Markdown 代码围栏，不要解释，不要前后缀。对象必须且只能包含以下字段：
 {"risk":"low|medium|high","confidence":0到1之间的小数,"categories":["简短中文分类"],"reason":"简短中文理由"}
 其中 risk 必须是 low、medium、high 之一；confidence 必须是数字；categories 必须是字符串数组；reason 必须是简洁中文说明。若信息不足或无法确定，应选择 medium 或 high，不得默认 low。

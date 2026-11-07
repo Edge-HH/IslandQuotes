@@ -243,8 +243,8 @@ Assert-TextContains 'queue supports reject selected' $queueText 'RejectSelected(
 Assert-TextContains 'queue supports approve all' $queueText 'ApproveAllPending('
 Assert-TextContains 'queue supports reject all' $queueText 'RejectAllPending('
 Assert-TextContains 'queue supports batch refresh' $queueText 'RefreshBatchAsync('
-Assert-TextContains 'queue bounds AI concurrency' $queueText 'MaxConcurrentReviews'
-Assert-TextContains 'queue enforces max buffered items' $queueText 'MaxBufferedItems'
+Assert-TextContains 'queue fills to max queue length' $queueText 'MaxQueueLength'
+Assert-TextContains 'queue retries failed AI reviews' $queueText 'MaxReviewAttempts'
 Assert-TextContains 'queue persists review-queue.json' $queueText 'review-queue.json'
 
 # Low/Medium 分支内含严格/宽松档的子分支，故在同一 case 内（不跨越下一个 case）查找默认映射。
@@ -263,8 +263,8 @@ Assert-TextContains 'queue restores Pending/Reviewing safely' $queueText 'case R
 Assert-TextContains 'restored unreviewed items become manual review' $queueText 'item.State = ReviewItemState.AwaitingManualReview;'
 
 $fifoChecks = @(
-    @{ Name = 'FIFO dequeues from index zero'; Needle = 'PlaybackQueue[0]' },
-    @{ Name = 'FIFO removes from index zero'; Needle = 'PlaybackQueue.RemoveAt(0)' },
+    @{ Name = 'FIFO scans from the queue head'; Needle = 'int index = 0;' },
+    @{ Name = 'FIFO removes the first eligible item'; Needle = 'PlaybackQueue.RemoveAt(index)' },
     @{ Name = 'approved items are appended'; Needle = 'PlaybackQueue.Add(item)' },
     @{ Name = 'no insertion at queue head'; Needle = 'PlaybackQueue.Insert(' }
 )

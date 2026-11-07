@@ -1,0 +1,79 @@
+<ci:SettingsPageBase x:Class="IslandQuotes.SettingsPages.ReviewHistoryPage"
+                     xmlns="https://github.com/avaloniaui"
+                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+                     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+                     xmlns:ci="http://classisland.tech/schemas/xaml/core"
+                     mc:Ignorable="d" d:DesignHeight="760" d:DesignWidth="820"
+                     AttachedToVisualTree="OnAttachedToVisualTree"
+                     DetachedFromVisualTree="OnDetachedFromVisualTree">
+    <ScrollViewer>
+        <StackPanel Classes="settings-container animated-intro" Spacing="12">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                <TextBlock Text="历史记录" FontSize="26" FontWeight="Bold" VerticalAlignment="Center"/>
+                <Button Grid.Column="1" Content="刷新" Click="RefreshButton_OnClick" VerticalAlignment="Center"/>
+            </Grid>
+
+            <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8">
+                <TextBox Text="{Binding SearchText, Mode=TwoWay}" Watermark="搜索正文、作者、来源或理由"/>
+                <ComboBox Grid.Column="1" ItemsSource="{Binding RiskFilterOptions}"
+                          SelectedItem="{Binding RiskFilter, Mode=TwoWay}" MinWidth="120">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate><TextBlock Text="{Binding Label}"/></DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+                <ComboBox Grid.Column="2" ItemsSource="{Binding StateFilterOptions}"
+                          SelectedItem="{Binding StateFilter, Mode=TwoWay}" MinWidth="120">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate><TextBlock Text="{Binding Label}"/></DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+                <Button Grid.Column="3" Content="清除筛选" Click="ClearFiltersButton_OnClick"/>
+            </Grid>
+
+            <TextBlock Text="{Binding CountLabel}" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+
+            <TextBlock Text="{Binding EmptyMessage}" IsVisible="{Binding IsEmpty}" Margin="0,12"
+                       HorizontalAlignment="Center" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+
+            <ItemsControl ItemsSource="{Binding Items}" IsVisible="{Binding HasItems}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                                BorderThickness="1" CornerRadius="4" Padding="10" Margin="0,3">
+                            <StackPanel Spacing="3">
+                                <TextBlock Text="{Binding DisplayContent}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                                <TextBlock Text="{Binding DisplayAttribution}" TextWrapping="Wrap"
+                                           IsVisible="{Binding HasAttribution}"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                                <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,3,0,0">
+                                    <TextBlock Text="{Binding RiskLabel}" Foreground="{Binding RiskBrush}" FontWeight="SemiBold"/>
+                                    <TextBlock Text="{Binding StateLabel}"/>
+                                    <TextBlock Text="{Binding ConfidenceLabel}"
+                                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                                    <TextBlock Text="{Binding CategoryLabel}"
+                                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                                </StackPanel>
+                                <TextBlock Text="{Binding AiSummary}" TextWrapping="Wrap" FontSize="12"
+                                           IsVisible="{Binding HasAiSummary}"/>
+                                <TextBlock Text="{Binding SourceLabel}" TextWrapping="Wrap" FontSize="12"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                                <TextBlock Text="{Binding CreatedAtLabel}" FontSize="12"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                            </StackPanel>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8" IsVisible="{Binding HasMultiplePages}">
+                <Button Content="上一页" Click="PreviousPageButton_OnClick"
+                        IsEnabled="{Binding CanGoToPreviousPage}"/>
+                <TextBlock Grid.Column="1" Text="{Binding PageLabel}" HorizontalAlignment="Center"
+                           VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                <Button Grid.Column="2" Content="下一页" Click="NextPageButton_OnClick"
+                        IsEnabled="{Binding CanGoToNextPage}"/>
+            </Grid>
+        </StackPanel>
+    </ScrollViewer>
+</ci:SettingsPageBase>

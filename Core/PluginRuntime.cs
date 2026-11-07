@@ -90,9 +90,15 @@ public static class PluginRuntime
                 settingsStore.Settings.Log.RetentionDays);
             QuoteSourceService quoteSources = new(auditLog);
             AiReviewService aiReview = new(settingsStore, auditLog);
-            ReviewQueueService queue = new(settingsStore, quoteSources, aiReview, auditLog);
+            CancellationTokenSource lifetimeCts = new();
+            ReviewQueueService queue = new(
+                settingsStore,
+                quoteSources,
+                aiReview,
+                auditLog,
+                lifetimeCts.Token);
 
-            queue.InitializeAsync().GetAwaiter().GetResult();
+            queue.InitializeAsync(lifetimeCts.Token).GetAwaiter().GetResult();
 
             _configDirectory = configDirectory;
             _settingsStore = settingsStore;
@@ -100,7 +106,7 @@ public static class PluginRuntime
             _aiReview = aiReview;
             _auditLog = auditLog;
             _queue = queue;
-            _lifetimeCts = new CancellationTokenSource();
+            _lifetimeCts = lifetimeCts;
             _initialized = true;
         }
     }
