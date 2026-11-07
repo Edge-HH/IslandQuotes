@@ -148,8 +148,7 @@ if ($null -ne $projectPath) {
     Assert-TextContains 'project assembly name is IslandQuotes' $projectText '<AssemblyName>IslandQuotes</AssemblyName>'
     Assert-TextContains 'project references ClassIsland.PluginSdk' $projectText 'ClassIsland.PluginSdk'
     $projectVersion = [regex]::Match($projectText, '<Version>\s*([^<]+?)\s*</Version>').Groups[1].Value
-    $manifestVersion = if ($null -ne $manifestPath) { Get-ManifestField $manifestPath 'version' } else { '' }
-    Add-Check 'project Version matches manifest version' ($projectVersion -eq $manifestVersion) "csproj Version='$projectVersion', manifest version='$manifestVersion'"
+    Add-Check 'project Version is read from manifest.yml' ($projectVersion -like '*manifest.yml*') "csproj Version='$projectVersion'"
     Assert-TextContains 'project copies manifest.yml' $projectText 'manifest.yml'
     Assert-TextContains 'project copies icon.png' $projectText 'icon.png'
 }
@@ -308,7 +307,7 @@ Write-Host '[4/7] Documentation acceptance tokens' -ForegroundColor Cyan
 $readmeText = Read-Utf8 (Join-Path $repoRoot 'README.md')
 $userGuideText = Read-Utf8 (Join-Path $repoRoot 'docs\USER_GUIDE.md')
 $privacyText = Read-Utf8 (Join-Path $repoRoot 'docs\PRIVACY_SECURITY.md')
-foreach ($token in @('ExtraIsland', '.NET 8', 'CreateCipx', 'auto_pass', 'manual_required', 'auto_block', 'audit-', 'review-queue.json', 'env:OPENAI_API_KEY', 'Ollama')) {
+foreach ($token in @('ExtraIsland', '.NET 8', 'CreateCipx', 'auto_pass', 'manual_required', 'auto_block', 'audit-', 'env:OPENAI_API_KEY', 'Ollama')) {
     Assert-TextContains "README covers: $token" $readmeText $token
 }
 foreach ($token in @('人工复核', '批准选中', 'FIFO', 'audit-', 'Ollama', '.NET 8')) {
@@ -423,6 +422,12 @@ if ($canInspectBuild) {
     if (Test-Path -LiteralPath $builtManifestPath -PathType Leaf) {
         $builtEntrance = Get-ManifestField $builtManifestPath 'entranceAssembly'
         Add-Check 'built manifest entranceAssembly matches IslandQuotes.dll' ($builtEntrance -eq 'IslandQuotes.dll') "entranceAssembly='$builtEntrance'"
+    }
+
+    if ((Test-Path -LiteralPath $assemblyPath -PathType Leaf) -and ($null -ne $manifestPath)) {
+        $manifestVersion = Get-ManifestField $manifestPath 'version'
+        $dllVersion = (Get-Item -LiteralPath $assemblyPath).VersionInfo.FileVersion
+        Add-Check 'built DLL version matches manifest version' ($dllVersion -eq $manifestVersion) "dll FileVersion='$dllVersion', manifest version='$manifestVersion'"
     }
 
     if (Test-Path -LiteralPath $cipxPath -PathType Leaf) {

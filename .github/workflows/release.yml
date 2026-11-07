@@ -25,6 +25,7 @@ jobs:
   release:
     name: 构建并上传 CIPX
     runs-on: windows-latest
+    timeout-minutes: 20
     steps:
       - name: 检出目标版本
         uses: actions/checkout@v5
@@ -35,6 +36,13 @@ jobs:
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 10.x
+
+      - name: 缓存 NuGet 包
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
+          restore-keys: nuget-${{ runner.os }}-
 
       - name: 校验发布标签
         shell: pwsh

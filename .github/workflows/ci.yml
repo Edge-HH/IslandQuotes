@@ -18,6 +18,7 @@ jobs:
   verify:
     name: 验收与构建
     runs-on: windows-latest
+    timeout-minutes: 20
     steps:
       - name: 检出代码
         uses: actions/checkout@v5
@@ -26,6 +27,13 @@ jobs:
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 10.x
+
+      - name: 缓存 NuGet 包
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
+          restore-keys: nuget-${{ runner.os }}-
 
       # verify.ps1 = 静态验收 + Release 构建 + CIPX 打包与包内容检查
       - name: 运行验收脚本

@@ -8,7 +8,8 @@
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <AssemblyName>IslandQuotes</AssemblyName>
     <RootNamespace>IslandQuotes</RootNamespace>
-    <Version>1.0.0.0</Version>
+    <!-- 版本号唯一来源是 manifest.yml 的 version 字段，避免两处不同步。 -->
+    <Version>$([System.Text.RegularExpressions.Regex]::Replace($([System.IO.File]::ReadAllText('$(MSBuildProjectDirectory)\manifest.yml')), '(?ms)\A.*?^version:\s*([0-9.]+).*\z', '$1'))</Version>
     <LangVersion>latest</LangVersion>
     <AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault>
     <PowershellBinaryName>powershell.exe</PowershellBinaryName>
